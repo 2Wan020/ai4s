@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=15" />
+    <link rel="stylesheet" href="styles.css?v=16" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -31,37 +31,37 @@
           </div>
           <div class="library-tools">
             <label class="search-box"><span>⌕</span><input id="bank-search" type="search" placeholder="搜索题库名称" /></label>
-            <button class="primary-button compact-button" type="button" id="hero-import-button">＋ 导入 Word</button>
+            <button class="primary-button compact-button" type="button" id="hero-import-button">＋ 导入题库</button>
           </div>
         </div>
 
         <section class="import-panel" id="import-panel" hidden>
           <div class="import-panel-top">
-            <p class="eyebrow">WORD IMPORT</p>
-            <button class="collapse-import" type="button" id="close-import" aria-label="收起 Word 导入面板">收起导入面板 ↑</button>
+            <p class="eyebrow">FILE IMPORT</p>
+            <button class="collapse-import" type="button" id="close-import" aria-label="收起题库导入面板">收起导入面板 ↑</button>
           </div>
           <div class="import-copy">
-            <h2>导入 Word 题库</h2>
-            <p>支持题后答案、题干尾部答案（如“题目（ABC）”）、文末答案表及加粗正确选项。</p>
+            <h2>导入题库文件</h2>
+            <p>支持 Word、PDF、图片、文本、表格和演示文稿；扫描件会先进行本地文字识别。</p>
           </div>
-          <label class="drop-zone" for="word-file">
+          <label class="drop-zone" for="question-file">
             <span class="upload-icon">↑</span>
-            <strong>选择 .doc / .docx 文件</strong>
-            <small>单个文件不超过 10 MB，导入后自动进入该题库</small>
-            <input id="word-file" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <strong>选择 PDF、图片、Word 或其他题库文件</strong>
+            <small>支持 DOC、DOCX、PDF、PNG、JPG、TXT、MD、CSV、ODT、XLSX、PPTX；不超过 25 MB</small>
+            <input id="question-file" type="file" accept=".doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.txt,.md,.csv,.html,.htm,.odt,.xlsx,.pptx,application/pdf,image/*,text/plain" />
           </label>
           <div class="ai-import-options" role="radiogroup" aria-label="题库识别方式">
             <label class="ai-import-option featured">
               <input id="ai-recognition" type="radio" name="recognition-mode" value="ai" checked />
               <span class="check-visual" aria-hidden="true">✓</span>
-              <span><strong>DeepSeek 精确识别 <em>推荐</em></strong><small>使用 V4-Flash 固定 JSON 校正题干、选项和答案</small></span>
+              <span><strong>DeepSeek 精确识别 <em>推荐</em></strong><small>校正题目边界、粘连选项、答案与单选/多选类型</small></span>
             </label>
             <label class="ai-import-option">
               <input id="local-recognition" type="radio" name="recognition-mode" value="local" />
               <span class="check-visual" aria-hidden="true">✓</span>
               <span><strong>普通识别</strong><small>使用服务器本地规则拆题，不调用 AI，速度更快</small></span>
             </label>
-            <p class="ai-privacy">精确识别仅发送 Word 中提取的题目文字；普通识别不调用外部 API。导入阶段均不生成 AI 解析，API Key 始终保存在服务器端。</p>
+            <p class="ai-privacy">图片与扫描 PDF 先在服务器本地 OCR；精确识别只发送提取后的题目文字。普通识别不调用外部 API，API Key 始终保存在服务器端。</p>
           </div>
           <div class="import-status" id="import-status" role="status"></div>
           <details class="format-help">
@@ -156,7 +156,20 @@ C. 选项三
                 <div class="question-ai-actions"><button class="secondary-button" type="button" id="question-ai-generate">查看解析</button><button class="ghost-button" type="button" id="question-ai-skip">暂不查看</button></div>
               </div>
               <p class="question-ai-status" id="question-ai-status" hidden></p>
-              <div class="question-ai-content" id="question-ai-content" hidden><strong><span id="question-ai-model">deepseek-v4-flash</span> 解析</strong><p id="question-ai-text"></p></div>
+              <div class="question-ai-content" id="question-ai-content" hidden>
+                <strong>题目解析</strong>
+                <p id="question-ai-text"></p>
+                <div class="tutor-followup">
+                  <div class="tutor-followup-head"><strong>还有疑问？</strong><small>可以围绕这道题继续追问</small></div>
+                  <div class="tutor-messages" id="tutor-messages" aria-live="polite" hidden></div>
+                  <form class="tutor-form" id="tutor-form">
+                    <label class="sr-only" for="tutor-input">继续追问题目解析</label>
+                    <textarea id="tutor-input" rows="2" maxlength="1000" placeholder="例如：为什么 B 选项不正确？"></textarea>
+                    <button class="secondary-button" type="submit" id="tutor-send">发送</button>
+                  </form>
+                  <p class="tutor-status" id="tutor-status" role="status" hidden></p>
+                </div>
+              </div>
             </section>
             <div class="quiz-actions">
               <button class="ghost-button" type="button" id="previous-button">上一题</button>
@@ -188,6 +201,6 @@ C. 选项三
     </main>
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=19"></script>
   </body>
 </html>

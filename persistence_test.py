@@ -121,6 +121,55 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
         self.assertEqual(second_state["state"]["banks"][0]["id"], "second")
         self.assertNotEqual(first_state["state"], second_state["state"])
 
+    def test_plain_text_bank_import_endpoint(self):
+        opener, _ = self.browser()
+        boundary = "----tudou-test-boundary"
+        file_payload = "1. 接口能否导入文本题库（A）\nA. 可以\nB. 不可以\n".encode("utf-8")
+        body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="file"; filename="sample.txt"\r\n'
+            "Content-Type: text/plain\r\n\r\n"
+        ).encode("utf-8") + file_payload + (
+            f"\r\n--{boundary}\r\n"
+            'Content-Disposition: form-data; name="use_ai"\r\n\r\n'
+            "0\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        request = Request(
+            f"http://127.0.0.1:{self.port}/api/import",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with opener.open(request, timeout=5) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        self.assertEqual(response.status, 200)
+        self.assertEqual(result["bank"]["sourceFormat"], "txt")
+        self.assertEqual(result["bank"]["questionCount"], 1)
+        self.assertEqual(result["questions"][0]["answer"], ["A"])
+
+    def test_tutor_endpoint_returns_followup_answer(self):
+        opener, _ = self.browser()
+        original_answer_tutor_question = server.answer_tutor_question
+        server.answer_tutor_question = lambda question, explanation, history, message: f"针对追问：{message}"
+        try:
+            status, result = self.api(opener, "/api/tutor", "POST", {
+                "question": {
+                    "sourceId": "q1",
+                    "prompt": "示例题",
+                    "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
+                    "answer": ["A"],
+                    "userAnswer": ["B"],
+                },
+                "explanation": "A 符合定义。",
+                "history": [],
+                "message": "为什么？",
+            })
+        finally:
+            server.answer_tutor_question = original_answer_tutor_question
+        self.assertEqual(status, 200)
+        self.assertEqual(result["answer"], "针对追问：为什么？")
+
 
 if __name__ == "__main__":
     unittest.main()

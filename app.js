@@ -551,7 +551,8 @@ function buildSession(spec, routeKey = '') {
     current: 0,
     responses: questions.map(() => ({
       selected: [], submitted: false, correct: false, hasAnswer: false,
-      aiExplanation: '', aiModel: '', aiLoading: false, aiSkipped: false, aiError: ''
+      aiExplanation: '', aiModel: '', aiLoading: false, aiSkipped: false, aiError: '',
+      aiConversation: [], aiFollowupLoading: false, aiFollowupError: ''
     })),
     autoNextTimer: null,
     aiAnalyses: [],
@@ -595,7 +596,7 @@ function renderCurrentQuestion() {
   $('question-number').textContent = String(session.current + 1).padStart(2, '0');
   $('question-type').textContent = question.type === 'multi' ? '多选题 · 可选择多项' : '单选题 · 请选择 1 项';
   $('quiz-question').textContent = question.prompt;
-  $('quiz-options').innerHTML = question.displayOptions.length ? question.displayOptions.map(([key, text]) => `<button class="option" type="button" data-key="${key}" aria-pressed="${response.selected.includes(key)}"><span class="option-control">${question.type === 'multi' ? '□' : '○'}</span><span class="option-key">${key}</span><span class="option-text">${escapeHtml(text)}</span></button>`).join('') : '<div class="option-missing">该题没有识别到完整选项，请检查原 Word 文档格式后重新导入。</div>';
+  $('quiz-options').innerHTML = question.displayOptions.length ? question.displayOptions.map(([key, text]) => `<button class="option" type="button" data-key="${key}" aria-pressed="${response.selected.includes(key)}"><span class="option-control">${question.type === 'multi' ? '□' : '○'}</span><span class="option-key">${key}</span><span class="option-text">${escapeHtml(text)}</span></button>`).join('') : '<div class="option-missing">该题没有识别到完整选项，请检查原题库文件后重新导入。</div>';
   $('quiz-options').querySelectorAll('[data-key]').forEach((button) => button.addEventListener('click', () => chooseOption(button.dataset.key)));
   $('previous-button').disabled = session.current === 0;
   $('submit-button').hidden = response.submitted;
@@ -637,8 +638,18 @@ function renderQuestionAiPanel(question, response) {
   status.className = `question-ai-status${response.aiError ? ' error' : ''}`;
 
   if (response.aiExplanation) {
-    $('question-ai-model').textContent = response.aiModel || 'deepseek-v4-flash';
     $('question-ai-text').textContent = response.aiExplanation;
+    const conversation = Array.isArray(response.aiConversation) ? response.aiConversation : [];
+    const messages = $('tutor-messages');
+    messages.hidden = !conversation.length;
+    messages.innerHTML = conversation.map((item) => `<div class="tutor-message ${item.role === 'user' ? 'user' : 'assistant'}"><span>${item.role === 'user' ? '你' : '助教'}</span><p>${escapeHtml(item.content)}</p></div>`).join('');
+    $('tutor-input').disabled = Boolean(response.aiFollowupLoading);
+    $('tutor-send').disabled = Boolean(response.aiFollowupLoading);
+    const tutorStatus = $('tutor-status');
+    tutorStatus.hidden = !response.aiFollowupLoading && !response.aiFollowupError;
+    tutorStatus.className = `tutor-status${response.aiFollowupError ? ' error' : ''}`;
+    if (response.aiFollowupLoading) tutorStatus.textContent = '正在整理回答，请稍候…';
+    else if (response.aiFollowupError) tutorStatus.textContent = response.aiFollowupError;
     return;
   }
   if (response.aiLoading) status.textContent = '正在调用 DeepSeek-V4-Flash 生成解析，请稍候…';
@@ -731,11 +742,61 @@ async function generateCurrentQuestionExplanation() {
     if (!analysis?.explanation) throw new Error('DeepSeek 未返回完整解析，请重试');
     responseState.aiExplanation = String(analysis.explanation).trim();
     responseState.aiModel = String(result.model || 'deepseek-v4-flash');
+    responseState.aiConversation = [];
   } catch (error) {
     responseState.aiError = error.message || '生成解析失败，请稍后重试。';
   } finally {
     responseState.aiLoading = false;
     if (state.session === session && session.current === questionIndex) renderCurrentQuestion();
+  }
+}
+
+async function submitQuestionFollowup(event) {
+  event.preventDefault();
+  const session = state.session;
+  if (!session) return;
+  const questionIndex = session.current;
+  const question = session.questions[questionIndex];
+  const responseState = session.responses[questionIndex];
+  const input = $('tutor-input');
+  const message = input.value.trim();
+  if (!message || !responseState?.aiExplanation || responseState.aiFollowupLoading) return;
+
+  responseState.aiFollowupLoading = true;
+  responseState.aiFollowupError = '';
+  renderQuestionAiPanel(question, responseState);
+  try {
+    const apiResponse = await fetch(`${API_BASE}/api/tutor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: {
+          sourceId: question.id,
+          prompt: question.prompt,
+          options: question.displayOptions.map(([key, text]) => ({ key, text })),
+          answer: question.displayAnswers,
+          userAnswer: responseState.selected
+        },
+        explanation: responseState.aiExplanation,
+        history: Array.isArray(responseState.aiConversation) ? responseState.aiConversation : [],
+        message
+      })
+    });
+    const result = await apiResponse.json();
+    if (!apiResponse.ok) throw new Error(result.error || '追问失败');
+    const answer = String(result.answer || '').trim();
+    if (!answer) throw new Error('没有收到完整回答，请重试');
+    responseState.aiConversation = [
+      ...(Array.isArray(responseState.aiConversation) ? responseState.aiConversation : []),
+      { role: 'user', content: message },
+      { role: 'assistant', content: answer }
+    ];
+    input.value = '';
+  } catch (error) {
+    responseState.aiFollowupError = error.message || '追问失败，请稍后重试。';
+  } finally {
+    responseState.aiFollowupLoading = false;
+    if (state.session === session && session.current === questionIndex) renderQuestionAiPanel(question, responseState);
   }
 }
 
@@ -779,6 +840,7 @@ function nextQuestion() {
   clearAutoNextTimer(session);
   if (session.current >= session.questions.length - 1) { renderResult(); return; }
   session.current += 1;
+  $('tutor-input').value = '';
   renderCurrentQuestion();
   savePracticeBookmark(session);
   resetQuestionCardOnMobile();
@@ -788,6 +850,7 @@ function previousQuestion() {
   clearAutoNextTimer();
   if (state.session.current > 0) {
     state.session.current -= 1;
+    $('tutor-input').value = '';
     renderCurrentQuestion();
     savePracticeBookmark(state.session);
     resetQuestionCardOnMobile();
@@ -954,15 +1017,25 @@ function showImportStatus(message, error = false) {
   $('import-status').className = `import-status${error ? ' error' : ''}`;
 }
 
-async function importWord(file) {
+const IMPORT_FILE_PATTERN = /\.(?:docx?|pdf|png|jpe?g|webp|bmp|tiff?|txt|md|csv|html?|odt|xlsx|pptx)$/i;
+const MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024;
+
+async function importQuestionFile(file) {
   if (!file) return;
-  if (!/\.docx?$/.test(file.name.toLowerCase())) { showImportStatus('请选择 .doc 或 .docx 文件。', true); return; }
+  if (!IMPORT_FILE_PATTERN.test(file.name)) {
+    showImportStatus('暂不支持该格式，请选择 Word、PDF、图片、文本、XLSX 或 PPTX 文件。', true);
+    return;
+  }
+  if (file.size > MAX_IMPORT_FILE_BYTES) {
+    showImportStatus('单个文件不能超过 25 MB。', true);
+    return;
+  }
   const useAI = $('ai-recognition').checked;
-  showImportStatus(useAI ? `正在使用 DeepSeek-V4-Flash 精确识别 ${file.name}，题目较多时需要几分钟…` : `正在使用普通识别拆分 ${file.name}，请稍候…`);
+  showImportStatus(useAI ? `正在提取并精确识别 ${file.name}，PDF 或图片可能需要几分钟…` : `正在本地提取并拆分 ${file.name}，请稍候…`);
   const form = new FormData();
   form.append('file', file);
   form.append('use_ai', useAI ? '1' : '0');
-  $('word-file').disabled = true;
+  $('question-file').disabled = true;
   $('ai-recognition').disabled = true;
   $('local-recognition').disabled = true;
   try {
@@ -979,14 +1052,16 @@ async function importWord(file) {
     saveBanks();
     const warnings = Array.isArray(result.warnings) ? result.warnings : [];
     const warningText = warnings.length ? `；发现 ${warnings.length} 条格式提醒：${warnings.slice(0, 2).join('；')}${warnings.length > 2 ? '…' : ''}` : '';
-    const aiText = result.ai?.used ? `；已由 ${result.ai.model || 'DeepSeek'} 固定 JSON 校对${result.ai.inferredAnswerCount ? `，推断 ${result.ai.inferredAnswerCount} 道缺失答案` : ''}` : '；普通识别未调用 AI';
-    showImportStatus(`导入完成：${bank.questionCount} 题，单选 ${bank.singleCount}，多选 ${bank.multiCount}${aiText}${warningText}`);
-    $('word-file').value = '';
+    const aiText = result.ai?.used ? `；精确校对完成${result.ai.inferredAnswerCount ? `，推断 ${result.ai.inferredAnswerCount} 道缺失答案` : ''}` : '；普通识别完成';
+    const extraction = result.extraction || {};
+    const extractionText = extraction.ocrUsed ? `；本地 OCR ${extraction.ocrPageCount || 1} 页` : '';
+    showImportStatus(`导入完成：${bank.questionCount} 题，单选 ${bank.singleCount}，多选 ${bank.multiCount}${extractionText}${aiText}${warningText}`);
     setTimeout(() => navigate(`#/bank/${encodeURIComponent(bank.id)}`), 700);
   } catch (error) {
-    showImportStatus(error.message || '导入失败，请检查文档格式。', true);
+    showImportStatus(error.message || '导入失败，请检查文件内容和格式。', true);
   } finally {
-    $('word-file').disabled = false;
+    $('question-file').disabled = false;
+    $('question-file').value = '';
     $('ai-recognition').disabled = false;
     $('local-recognition').disabled = false;
   }
@@ -995,7 +1070,7 @@ async function importWord(file) {
 document.querySelectorAll('[data-nav]').forEach((button) => button.addEventListener('click', () => navigate(button.dataset.nav)));
 $('hero-import-button').addEventListener('click', showImportPanel);
 $('close-import').addEventListener('click', () => { $('import-panel').hidden = true; });
-$('word-file').addEventListener('change', (event) => importWord(event.target.files[0]));
+$('question-file').addEventListener('change', (event) => importQuestionFile(event.target.files[0]));
 $('bank-search').addEventListener('input', renderLibrary);
 $('global-wrong-button').addEventListener('click', () => navigate('#/wrongbook'));
 $('mock-single-count').addEventListener('input', updateMockTotal);
@@ -1026,6 +1101,7 @@ $('auto-next-correct').addEventListener('change', (event) => {
 });
 $('question-ai-generate').addEventListener('click', generateCurrentQuestionExplanation);
 $('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);
+$('tutor-form').addEventListener('submit', submitQuestionFollowup);
 $('next-button').addEventListener('click', nextQuestion);
 $('previous-button').addEventListener('click', previousQuestion);
 $('result-ai-generate').addEventListener('click', generateResultAnalyses);

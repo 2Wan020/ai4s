@@ -14,6 +14,11 @@ Environment=QUIZ_DB_PATH=/var/lib/quiz-site/quiz.db
 Environment=DEEPSEEK_MODEL=deepseek-v4-flash
 Environment=DEEPSEEK_BASE_URL=https://api.deepseek.com
 Environment=AI_IMPORTS_PER_HOUR=8
+Environment=AI_EXPLANATIONS_PER_HOUR=60
+Environment=AI_TUTOR_MESSAGES_PER_HOUR=120
+Environment=MAX_UPLOAD_BYTES=26214400
+Environment=MAX_PDF_PAGES=100
+Environment=OCR_LANGUAGES=chi_sim+eng
 LoadCredential=deepseek_api_key:/etc/quiz-site/deepseek_api_key
 ExecStart=/usr/bin/python3 /opt/quiz-site/server.py
 Restart=on-failure

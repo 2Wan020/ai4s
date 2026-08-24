@@ -1,4 +1,6 @@
 import unittest
+from io import BytesIO
+from zipfile import ZipFile
 
 import server
 
@@ -148,6 +150,75 @@ class OrdinaryImportParserRegressionTests(unittest.TestCase):
         self.assertTrue(server.consume_ai_rate_limit("127.0.0.1", "imports", 1))
         self.assertFalse(server.consume_ai_rate_limit("127.0.0.1", "imports", 1))
         self.assertTrue(server.consume_ai_rate_limit("127.0.0.1", "explanations", 1))
+
+    def test_utf8_text_file_uses_generic_import_pipeline(self):
+        lines, metadata = server.extract_document_lines(
+            "1. 示例题（A）\nA. 正确\nB. 错误".encode("utf-8"),
+            "题库.txt",
+        )
+        self.assertEqual(metadata["method"], "plain-text")
+        questions, warnings = server.parse_docx_questions(lines)
+        self.assertEqual(len(questions), 1, warnings)
+        self.assertEqual(questions[0]["answer"], ["A"])
+
+    def test_html_file_keeps_block_boundaries(self):
+        payload = b"<h1>1. Example (A)</h1><p>A. Yes</p><p>B. No</p>"
+        lines, metadata = server.extract_document_lines(payload, "bank.html")
+        self.assertEqual(metadata["method"], "html")
+        self.assertEqual(lines, ["1. Example (A)", "A. Yes", "B. No"])
+
+    def test_xlsx_rows_are_extracted_without_third_party_packages(self):
+        payload = BytesIO()
+        with ZipFile(payload, "w") as archive:
+            archive.writestr(
+                "xl/worksheets/sheet1.xml",
+                """<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>
+                <row><c t=\"inlineStr\"><is><t>1. 表格题（A）</t></is></c></row>
+                <row><c t=\"inlineStr\"><is><t>A. 正确</t></is></c></row>
+                <row><c t=\"inlineStr\"><is><t>B. 错误</t></is></c></row>
+                </sheetData></worksheet>""",
+            )
+        lines, metadata = server.extract_document_lines(payload.getvalue(), "bank.xlsx")
+        self.assertEqual(metadata["method"], "spreadsheet")
+        questions, warnings = server.parse_docx_questions(lines)
+        self.assertEqual(len(questions), 1, warnings)
+        self.assertEqual(questions[0]["options"], [["A", "正确"], ["B", "错误"]])
+
+    def test_tutor_request_keeps_complete_question_and_paired_history(self):
+        question, explanation, history, message = server.prepare_tutor_request({
+            "question": {
+                "sourceId": "q1",
+                "prompt": "示例题",
+                "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
+                "answer": ["A"],
+                "userAnswer": ["B"],
+            },
+            "explanation": "A 符合定义。",
+            "history": [
+                {"role": "user", "content": "为什么？"},
+                {"role": "assistant", "content": "因为 A 符合定义。"},
+            ],
+            "message": "能举例吗？",
+        })
+        self.assertEqual(question["answer"], ["A"])
+        self.assertEqual(explanation, "A 符合定义。")
+        self.assertEqual([item["role"] for item in history], ["user", "assistant"])
+        self.assertEqual(message, "能举例吗？")
+
+    def test_tutor_request_rejects_unpaired_history(self):
+        with self.assertRaisesRegex(ValueError, "缺少助教回答"):
+            server.prepare_tutor_request({
+                "question": {
+                    "sourceId": "q1",
+                    "prompt": "示例题",
+                    "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
+                    "answer": ["A"],
+                    "userAnswer": ["B"],
+                },
+                "explanation": "解析",
+                "history": [{"role": "user", "content": "为什么？"}],
+                "message": "继续",
+            })
 
 
 if __name__ == "__main__":
