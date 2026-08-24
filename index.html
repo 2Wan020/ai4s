@@ -160,11 +160,11 @@ C. 选项三
                 <strong>题目解析</strong>
                 <div class="question-ai-text markdown-body" id="question-ai-text"></div>
                 <div class="tutor-followup">
-                  <div class="tutor-followup-head"><strong>还有疑问？</strong><small>可以围绕这道题继续追问</small></div>
+                  <div class="tutor-followup-head"><strong>还有疑问？</strong><small>Enter 发送，Shift+Enter 换行</small></div>
                   <div class="tutor-messages" id="tutor-messages" aria-live="polite" hidden></div>
                   <form class="tutor-form" id="tutor-form">
                     <label class="sr-only" for="tutor-input">继续追问题目解析</label>
-                    <textarea id="tutor-input" rows="2" maxlength="1000" placeholder="例如：为什么 B 选项不正确？"></textarea>
+                    <textarea id="tutor-input" rows="2" maxlength="1000" placeholder="例如：为什么 B 选项不正确？" aria-keyshortcuts="Enter Shift+Enter"></textarea>
                     <button class="secondary-button" type="submit" id="tutor-send">发送</button>
                   </form>
                   <p class="tutor-status" id="tutor-status" role="status" hidden></p>
@@ -223,6 +223,6 @@ C. 选项三
       </div>
     </dialog>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=21"></script>
+    <script src="app.js?v=22"></script>
   </body>
 </html>

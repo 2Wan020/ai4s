@@ -993,6 +993,17 @@ async function submitQuestionFollowup(event) {
   }
 }
 
+function handleTutorInputKeydown(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  const input = event.currentTarget;
+  const form = $('tutor-form');
+  const sendButton = $('tutor-send');
+  if (!input.value.trim() || input.disabled || sendButton.disabled) return;
+  if (typeof form.requestSubmit === 'function') form.requestSubmit(sendButton);
+  else sendButton.click();
+}
+
 function skipCurrentQuestionExplanation() {
   const session = state.session;
   if (!session) return;
@@ -1335,6 +1346,7 @@ $('auto-next-correct').addEventListener('change', (event) => {
 $('question-ai-generate').addEventListener('click', generateCurrentQuestionExplanation);
 $('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);
 $('tutor-form').addEventListener('submit', submitQuestionFollowup);
+$('tutor-input').addEventListener('keydown', handleTutorInputKeydown);
 $('next-button').addEventListener('click', nextQuestion);
 $('previous-button').addEventListener('click', previousQuestion);
 $('result-ai-generate').addEventListener('click', generateResultAnalyses);
