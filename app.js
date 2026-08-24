@@ -3,6 +3,7 @@ const BANK_STORAGE_KEY = 'tudou-question-banks-v2';
 const COMPLETED_KEY = 'tudou-completed-v2';
 const WRONG_KEY = 'tudou-wrong-v2';
 const AUTO_NEXT_CORRECT_KEY = 'tudou-auto-next-correct-v1';
+const SHUFFLE_OPTIONS_KEY = 'tudou-shuffle-options-v1';
 const LAST_PRACTICE_KEY = 'tudou-last-practice-v1';
 const CLOUD_DIRTY_KEY = 'tudou-cloud-dirty-v1';
 const AUTO_NEXT_DELAY_MS = 500;
@@ -271,6 +272,7 @@ const state = {
   mockConfig: null,
   lastSpec: null,
   autoNextCorrect: loadBooleanPreference(AUTO_NEXT_CORRECT_KEY),
+  shufflePracticeOptions: loadBooleanPreference(SHUFFLE_OPTIONS_KEY),
   resumeBookmark: loadPracticeBookmark(),
   cloud: { ready: false, saving: false, pending: false, timer: null, revision: 0 }
 };
@@ -300,7 +302,10 @@ function profileSnapshot() {
     banks: importedBanks,
     completed: [...completedSet],
     wrong: [...wrongSet],
-    preferences: { autoNextCorrect: state.autoNextCorrect },
+    preferences: {
+      autoNextCorrect: state.autoNextCorrect,
+      shuffleOptions: state.shufflePracticeOptions
+    },
     lastPractice: state.resumeBookmark
   };
 }
@@ -314,6 +319,7 @@ function persistProfileLocally() {
     else localStorage.removeItem(LAST_PRACTICE_KEY);
   } catch { /* Large题库仍会由 SQLite 保存。 */ }
   saveBooleanPreference(AUTO_NEXT_CORRECT_KEY, state.autoNextCorrect);
+  saveBooleanPreference(SHUFFLE_OPTIONS_KEY, state.shufflePracticeOptions);
 }
 
 function applyProfileSnapshot(snapshot) {
@@ -329,6 +335,7 @@ function applyProfileSnapshot(snapshot) {
     if (knownQuestionIds.has(String(questionId))) wrongSet.add(String(questionId));
   });
   state.autoNextCorrect = Boolean(source.preferences?.autoNextCorrect);
+  state.shufflePracticeOptions = Boolean(source.preferences?.shuffleOptions);
   const bookmark = source.lastPractice && typeof source.lastPractice === 'object' ? source.lastPractice : null;
   state.resumeBookmark = bookmark && (bookmark.bankId === 'all' || getBank(bookmark.bankId)) ? bookmark : null;
   if (state.resumeBookmark?.mode === 'mock' && state.resumeBookmark.spec) {
@@ -481,50 +488,12 @@ function navigate(hash) {
   if (location.hash === hash) renderRoute(); else location.hash = hash;
 }
 
-function askOptionOrder(mode) {
-  const dialog = $('option-order-dialog');
-  const label = MODE_CONFIG[mode]?.label || '本次练习';
-  if (!dialog || typeof dialog.showModal !== 'function') {
-    return Promise.resolve(window.confirm(`${label}：是否打乱每道题的选项顺序？\n\n确定：打乱选项\n取消：保持原顺序`));
-  }
-  if (dialog.open) dialog.close();
-  $('option-order-mode').textContent = label;
-  return new Promise((resolve) => {
-    let settled = false;
-    const keepButton = $('option-order-keep');
-    const shuffleButton = $('option-order-shuffle');
-    const closeButton = $('option-order-close');
-    const cancelButton = $('option-order-cancel');
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      dialog.removeEventListener('cancel', handleCancel);
-      keepButton.onclick = null;
-      shuffleButton.onclick = null;
-      closeButton.onclick = null;
-      cancelButton.onclick = null;
-      if (dialog.open) dialog.close();
-      resolve(value);
-    };
-    const handleCancel = (event) => {
-      event.preventDefault();
-      finish(null);
-    };
-    keepButton.onclick = () => finish(false);
-    shuffleButton.onclick = () => finish(true);
-    closeButton.onclick = () => finish(null);
-    cancelButton.onclick = () => finish(null);
-    dialog.addEventListener('cancel', handleCancel);
-    dialog.showModal();
-    window.requestAnimationFrame(() => keepButton.focus());
-  });
-}
-
-async function startTypedPractice(bank, mode) {
-  const shuffleOptions = await askOptionOrder(mode);
-  if (shuffleOptions === null) return;
-  const optionOrder = shuffleOptions ? 'shuffle' : 'fixed';
-  navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}/${optionOrder}`);
+function setShuffleOptionsPreference(value, sync = true) {
+  const nextValue = Boolean(value);
+  const changed = state.shufflePracticeOptions !== nextValue;
+  state.shufflePracticeOptions = nextValue;
+  saveBooleanPreference(SHUFFLE_OPTIONS_KEY, nextValue);
+  if (changed && sync) markProfileChanged();
 }
 
 function routeParts() {
@@ -585,6 +554,9 @@ function renderBank(bank) {
   $('bank-single').textContent = single.length;
   $('bank-multi').textContent = multi.length;
   $('bank-wrong').textContent = wrong;
+  const shuffleToggle = $('shuffle-options-toggle');
+  shuffleToggle.checked = state.shufflePracticeOptions;
+  shuffleToggle.onchange = (event) => setShuffleOptionsPreference(event.currentTarget.checked);
 
   $('mode-grid').innerHTML = MODE_CARDS.map((mode) => {
     const count = mode.key.includes('single') ? single.length : mode.key.includes('multi') ? multi.length : ['wrong', 'wrongbook'].includes(mode.key) ? wrong : bank.questions.length;
@@ -597,7 +569,10 @@ function renderBank(bank) {
     const mode = button.dataset.mode;
     if (mode === 'mock') navigate(`#/bank/${encodeURIComponent(bank.id)}/mock`);
     else if (mode === 'wrongbook') navigate(`#/bank/${encodeURIComponent(bank.id)}/wrongbook`);
-    else if (OPTION_ORDER_MODES.has(mode)) startTypedPractice(bank, mode);
+    else if (OPTION_ORDER_MODES.has(mode)) {
+      const optionOrder = state.shufflePracticeOptions ? 'shuffle' : 'fixed';
+      navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}/${optionOrder}`);
+    }
     else navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}`);
   }));
 
@@ -723,6 +698,12 @@ function buildSession(spec, routeKey = '') {
 
 function beginSession(spec, routeKey = '') {
   clearAutoNextTimer();
+  if (OPTION_ORDER_MODES.has(spec.mode)) {
+    const effectiveShuffle = typeof spec.shuffleOptions === 'boolean'
+      ? spec.shuffleOptions
+      : MODE_CONFIG[spec.mode].shuffleOptions;
+    setShuffleOptionsPreference(effectiveShuffle);
+  }
   state.lastSpec = { ...spec };
   state.session = buildSession(spec, routeKey);
   if (!state.session.questions.length) {

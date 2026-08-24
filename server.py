@@ -1957,7 +1957,10 @@ def validate_profile_state(raw_state) -> dict:
         "banks": banks,
         "completed": unique_strings(completed),
         "wrong": unique_strings(wrong),
-        "preferences": {"autoNextCorrect": bool(preferences.get("autoNextCorrect", False))},
+        "preferences": {
+            "autoNextCorrect": bool(preferences.get("autoNextCorrect", False)),
+            "shuffleOptions": bool(preferences.get("shuffleOptions", False)),
+        },
         "lastPractice": clean_last_practice,
     }
 

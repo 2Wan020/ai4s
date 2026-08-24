@@ -147,24 +147,12 @@ button:disabled { cursor:not-allowed; }
 .mode-count { grid-column:2; align-self:end; color:var(--teal-dark); font:500 12px 'DM Mono',monospace; }
 .mode-arrow { position:absolute; right:18px; bottom:17px; color:var(--teal); }
 .wrongbook-card { border-color:#acd9d0; background:linear-gradient(135deg,#fff,#f0faf7); }
-.option-order-dialog { width:min(580px,calc(100% - 32px)); max-height:calc(100dvh - 32px); padding:0; overflow:auto; border:0; border-radius:20px; color:var(--ink); background:transparent; box-shadow:0 28px 80px rgba(18,44,43,.24); }
-.option-order-dialog::backdrop { background:rgba(18,44,43,.48); backdrop-filter:blur(4px); }
-.option-order-card { position:relative; padding:30px; border:1px solid #bcded6; border-radius:20px; background:#f8fcfa; }
-.option-order-card h2 { margin:10px 42px 8px 0; font-size:27px; letter-spacing:-.04em; }
-.option-order-card>p:not(.eyebrow) { margin:0; color:var(--muted); font-size:13px; line-height:1.75; }
-.option-order-card>p span { color:var(--teal-dark); font-weight:800; }
-.dialog-close { position:absolute; top:18px; right:18px; display:grid; width:34px; height:34px; place-items:center; padding:0; border:1px solid var(--line); border-radius:10px; color:var(--muted); background:#fff; font-size:20px; line-height:1; }
-.dialog-close:hover { color:var(--ink); border-color:#a9d4cb; }
-.option-order-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; margin-top:23px; }
-.option-order-choice { min-height:145px; padding:18px; border:1px solid var(--line); border-radius:14px; color:var(--ink); background:#fff; text-align:left; transition:.16s; }
-.option-order-choice:hover,.option-order-choice:focus-visible { border-color:#64b9aa; box-shadow:0 9px 24px rgba(29,78,72,.09); outline:0; transform:translateY(-1px); }
-.option-order-choice.featured { border-color:#9fd5ca; background:#edf9f5; }
-.option-order-preview { display:block; margin-bottom:19px; color:var(--teal); font:500 12px 'DM Mono',monospace; letter-spacing:.06em; }
-.option-order-choice strong,.option-order-choice small { display:block; }
-.option-order-choice strong { font-size:16px; }
-.option-order-choice small { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.6; }
-.dialog-cancel { display:block; margin:18px auto 0; padding:5px 12px; border:0; color:var(--muted); background:transparent; font-size:12px; font-weight:700; }
-.dialog-cancel:hover { color:var(--teal-dark); }
+.option-shuffle-toggle { display:flex; min-width:245px; align-items:center; gap:11px; margin:0; padding:12px 14px; border:1px solid var(--line); border-radius:12px; color:var(--ink); background:rgba(255,255,255,.82); cursor:pointer; transition:.16s; }
+.option-shuffle-toggle:hover,.option-shuffle-toggle:focus-within { border-color:#78c3b5; box-shadow:0 8px 22px rgba(29,78,72,.08); }
+.option-shuffle-toggle input { flex:0 0 auto; width:20px; height:20px; margin:0; accent-color:var(--teal); cursor:pointer; }
+.option-shuffle-toggle span,.option-shuffle-toggle strong,.option-shuffle-toggle small { display:block; }
+.option-shuffle-toggle strong { font-size:14px; line-height:1.35; }
+.option-shuffle-toggle small { margin-top:3px; color:var(--muted); font-size:11px; line-height:1.35; }
 .bank-preview-section { margin-top:54px; }
 .type-overview { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
 .type-overview article { display:flex; gap:17px; padding:22px; border:1px solid var(--line); border-radius:15px; background:#fff; }
@@ -377,13 +365,8 @@ button:disabled { cursor:not-allowed; }
   .library-heading,.page-heading { display:block; margin-top:38px; }
   .search-box { width:100%; }
   .page-heading>p { margin-top:10px; text-align:left; }
+  .option-shuffle-toggle { width:100%; min-width:0; margin-top:15px; }
   .bank-grid,.mode-grid,.type-overview { grid-template-columns:minmax(0,1fr); }
-  .option-order-dialog { width:calc(100% - 24px); max-height:calc(100dvh - 24px); }
-  .option-order-card { padding:24px 18px 20px; }
-  .option-order-card h2 { font-size:24px; }
-  .option-order-choices { grid-template-columns:1fr; }
-  .option-order-choice { min-height:0; padding:15px 16px; }
-  .option-order-preview { margin-bottom:10px; }
   .bank-card { min-width:0; padding:20px; }
   .bank-type-row { gap:6px; }
   .bank-hero { display:block; padding:25px; }
