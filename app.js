@@ -360,8 +360,12 @@ function deleteBank(bankId) {
 
 function showView(viewId) {
   if (viewId !== 'view-practice') clearAutoNextTimer();
+  const wasPracticeActive = document.body.classList.contains('practice-active');
+  const isPracticeActive = viewId === 'view-practice';
+  const isMobile = window.matchMedia('(max-width: 720px)').matches;
+  document.body.classList.toggle('practice-active', isPracticeActive);
   document.querySelectorAll('.view').forEach((view) => { view.hidden = view.id !== viewId; });
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  if (!isPracticeActive || !wasPracticeActive || !isMobile) window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 function navigate(hash) {
@@ -761,13 +765,12 @@ function scheduleAutoNext(session, questionIndex) {
   }, AUTO_NEXT_DELAY_MS);
 }
 
-function focusQuestionOnMobile() {
+function resetQuestionCardOnMobile() {
   if (!window.matchMedia('(max-width: 720px)').matches) return;
   window.requestAnimationFrame(() => {
     const card = document.querySelector('#view-practice .quiz-card');
     if (!card) return;
-    const top = Math.max(0, window.scrollY + card.getBoundingClientRect().top - 8);
-    window.scrollTo({ top, behavior: 'auto' });
+    card.scrollTo({ top: 0, behavior: 'auto' });
   });
 }
 
@@ -778,7 +781,7 @@ function nextQuestion() {
   session.current += 1;
   renderCurrentQuestion();
   savePracticeBookmark(session);
-  focusQuestionOnMobile();
+  resetQuestionCardOnMobile();
 }
 
 function previousQuestion() {
@@ -787,7 +790,7 @@ function previousQuestion() {
     state.session.current -= 1;
     renderCurrentQuestion();
     savePracticeBookmark(state.session);
-    focusQuestionOnMobile();
+    resetQuestionCardOnMobile();
   }
 }
 
