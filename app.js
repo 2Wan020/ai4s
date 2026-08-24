@@ -828,8 +828,7 @@ function renderResultAnalyses(session, wrongItems = getSessionWrongItems(session
 
   if (!wrongItems.length) {
     prompt.hidden = false;
-    $('result-ai-title').textContent = '本次没有错题';
-    $('result-ai-copy').textContent = '全部作答正确，无需生成 AI 错题解析。';
+    $('result-ai-title').textContent = '全部作答正确，无需生成错题解析。';
     generateButton.hidden = true;
     skipButton.hidden = true;
     status.hidden = true;
@@ -838,8 +837,7 @@ function renderResultAnalyses(session, wrongItems = getSessionWrongItems(session
 
   generateButton.hidden = false;
   skipButton.hidden = false;
-  $('result-ai-title').textContent = `需要 AI 解析这 ${wrongItems.length} 道错题吗？`;
-  $('result-ai-copy').textContent = '只有确认后才会调用 DeepSeek-V4-Flash。';
+  $('result-ai-title').textContent = `需要解析这 ${wrongItems.length} 道错题吗？`;
 
   if (session.aiAnalyses.length) {
     prompt.hidden = true;
@@ -861,7 +859,7 @@ function renderResultAnalyses(session, wrongItems = getSessionWrongItems(session
   if (session.aiAnalysisSkipped) {
     prompt.hidden = true;
     status.hidden = false;
-    status.textContent = '已按你的选择跳过 AI 解析。';
+    status.textContent = '已按你的选择跳过解析。';
     return;
   }
 
