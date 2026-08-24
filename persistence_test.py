@@ -53,6 +53,16 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
         with opener.open(request, timeout=5) as response:
             return response.status, json.loads(response.read().decode("utf-8"))
 
+    def sse_api(self, opener, path, payload):
+        request = Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with opener.open(request, timeout=5) as response:
+            return response.status, response.headers.get("Content-Type", ""), response.read().decode("utf-8")
+
     @staticmethod
     def sample_state(bank_id="bank-a", completed=True):
         question_id = f"{bank_id}::q1"
@@ -169,6 +179,96 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
             server.answer_tutor_question = original_answer_tutor_question
         self.assertEqual(status, 200)
         self.assertEqual(result["answer"], "针对追问：为什么？")
+
+    def test_deepseek_stream_ignores_reasoning_and_forwards_markdown(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def __iter__(self):
+                events = [
+                    {"choices": [{"delta": {"reasoning_content": "不应转发的内部推理"}, "finish_reason": None}]},
+                    {"choices": [{"delta": {"content": "### 结论\n"}, "finish_reason": None}]},
+                    {"choices": [{"delta": {"content": "**正确答案：A**"}, "finish_reason": "stop"}]},
+                ]
+                lines = [f"data: {json.dumps(event, ensure_ascii=False)}\n".encode("utf-8") for event in events]
+                lines.append(b"data: [DONE]\n")
+                return iter(lines)
+
+        original_urlopen = server.urlopen
+        server.urlopen = lambda *_args, **_kwargs: FakeResponse()
+        fragments = []
+        try:
+            answer = server.request_deepseek_stream(
+                "test-key",
+                [{"role": "user", "content": "测试"}],
+                100,
+                "测试流",
+                fragments.append,
+            )
+        finally:
+            server.urlopen = original_urlopen
+        self.assertEqual(answer, "### 结论\n**正确答案：A**")
+        self.assertEqual(fragments, ["### 结论\n", "**正确答案：A**"])
+        self.assertNotIn("内部推理", answer)
+
+    def test_streaming_explanation_and_tutor_endpoints_emit_sse(self):
+        opener, _ = self.browser()
+        original_api_key = server.load_deepseek_api_key
+        original_explanation = server.stream_question_explanation
+        original_tutor = server.stream_tutor_answer
+
+        def fake_explanation(_api_key, _source, on_delta, on_heartbeat=None):
+            on_delta("### 结论\n")
+            if on_heartbeat:
+                on_heartbeat()
+            on_delta("**正确答案：A**")
+            return "### 结论\n**正确答案：A**"
+
+        def fake_tutor(_api_key, _question, _explanation, _history, _message, on_delta, on_heartbeat=None):
+            on_delta("- 第一点\n")
+            on_delta("- 第二点")
+            return "- 第一点\n- 第二点"
+
+        server.load_deepseek_api_key = lambda: "test-key"
+        server.stream_question_explanation = fake_explanation
+        server.stream_tutor_answer = fake_tutor
+        question = {
+            "sourceId": "q1",
+            "prompt": "示例题",
+            "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
+            "answer": ["A"],
+            "userAnswer": ["B"],
+        }
+        try:
+            status, content_type, body = self.sse_api(opener, "/api/explanations/stream", {"questions": [question]})
+            tutor_status, tutor_content_type, tutor_body = self.sse_api(opener, "/api/tutor/stream", {
+                "question": question,
+                "explanation": "A 符合定义。",
+                "history": [],
+                "message": "为什么？",
+            })
+        finally:
+            server.load_deepseek_api_key = original_api_key
+            server.stream_question_explanation = original_explanation
+            server.stream_tutor_answer = original_tutor
+
+        self.assertEqual(status, 200)
+        self.assertTrue(content_type.startswith("text/event-stream"))
+        self.assertIn("event: meta", body)
+        self.assertEqual(body.count("event: delta"), 2)
+        self.assertIn("event: heartbeat", body)
+        self.assertIn("event: item_done", body)
+        self.assertIn("event: done", body)
+        self.assertIn("### 结论", body)
+
+        self.assertEqual(tutor_status, 200)
+        self.assertTrue(tutor_content_type.startswith("text/event-stream"))
+        self.assertEqual(tutor_body.count("event: delta"), 2)
+        self.assertIn("event: done", tutor_body)
 
 
 if __name__ == "__main__":

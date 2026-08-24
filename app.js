@@ -20,6 +20,114 @@ const MODE_CONFIG = {
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 
+const markdownRenderer = typeof window.markdownit === 'function'
+  ? window.markdownit({ html: false, breaks: true, linkify: true, typographer: false })
+  : null;
+
+if (markdownRenderer) {
+  const validateLink = markdownRenderer.validateLink.bind(markdownRenderer);
+  markdownRenderer.validateLink = (url) => /^https?:\/\//i.test(String(url || '').trim()) && validateLink(url);
+  const defaultLinkOpen = markdownRenderer.renderer.rules.link_open
+    || ((tokens, index, options, environment, renderer) => renderer.renderToken(tokens, index, options));
+  markdownRenderer.renderer.rules.link_open = (tokens, index, options, environment, renderer) => {
+    tokens[index].attrSet('target', '_blank');
+    tokens[index].attrSet('rel', 'noopener noreferrer nofollow');
+    return defaultLinkOpen(tokens, index, options, environment, renderer);
+  };
+  markdownRenderer.renderer.rules.image = (tokens, index) => escapeHtml(tokens[index].content || '');
+}
+
+function markdownHtml(value) {
+  const source = String(value ?? '');
+  if (markdownRenderer) return markdownRenderer.render(source);
+  return `<p>${escapeHtml(source).replace(/\n/g, '<br>')}</p>`;
+}
+
+function renderMarkdown(element, value) {
+  element.innerHTML = markdownHtml(value);
+}
+
+async function readApiError(response, fallback) {
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const payload = await response.json();
+      return String(payload?.error || fallback);
+    }
+    const text = (await response.text()).trim();
+    return text || fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function consumeEventStream(response, handlers = {}) {
+  if (!response.ok) throw new Error(await readApiError(response, '流式请求失败'));
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.toLowerCase().includes('text/event-stream')) throw new Error('服务器未返回 SSE 流');
+  if (!response.body?.getReader) throw new Error('当前浏览器不支持流式回答');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let eventName = 'message';
+  let dataLines = [];
+  let receivedDone = false;
+
+  const dispatch = () => {
+    if (!dataLines.length) {
+      eventName = 'message';
+      return;
+    }
+    const rawData = dataLines.join('\n');
+    let payload;
+    try { payload = JSON.parse(rawData); } catch (_) { payload = { data: rawData }; }
+    const currentEvent = eventName || 'message';
+    eventName = 'message';
+    dataLines = [];
+    if (currentEvent === 'error') throw new Error(String(payload?.error || '流式生成失败'));
+    if (currentEvent === 'done') receivedDone = true;
+    if (typeof handlers[currentEvent] === 'function') handlers[currentEvent](payload);
+  };
+
+  const processLine = (rawLine) => {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    if (!line) {
+      dispatch();
+      return;
+    }
+    if (line.startsWith(':')) return;
+    const colon = line.indexOf(':');
+    const field = colon >= 0 ? line.slice(0, colon) : line;
+    let value = colon >= 0 ? line.slice(colon + 1) : '';
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') eventName = value;
+    else if (field === 'data') dataLines.push(value);
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf('\n');
+      while (newline >= 0) {
+        processLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
+      }
+    }
+    if (buffer) processLine(buffer);
+    dispatch();
+  } finally {
+    reader.releaseLock();
+  }
+  if (!receivedDone) throw new Error('流式连接提前结束，请重试');
+}
+
 function shuffle(items) {
   const result = [...items];
   for (let index = result.length - 1; index > 0; index -= 1) {
@@ -556,6 +664,8 @@ function buildSession(spec, routeKey = '') {
     })),
     autoNextTimer: null,
     aiAnalyses: [],
+    aiAnalysisCompletedIds: [],
+    aiAnalysisError: '',
     aiAnalysisSkipped: false,
     aiAnalysisLoading: false
   };
@@ -619,6 +729,18 @@ function renderCurrentQuestion() {
   };
 }
 
+function tutorMessageMarkup(item, index, conversation, loading) {
+  const isUser = item.role === 'user';
+  const isStreaming = !isUser && loading && index === conversation.length - 1;
+  const content = isUser
+    ? `<p>${escapeHtml(item.content)}</p>`
+    : (item.content ? markdownHtml(item.content) : '<p class="tutor-stream-placeholder">正在回答…</p>');
+  return `<div class="tutor-message ${isUser ? 'user' : 'assistant'}${isStreaming ? ' streaming' : ''}">
+    <span>${isUser ? '你' : '助教'}</span>
+    <div class="tutor-message-content${isUser ? '' : ' markdown-body'}">${content}</div>
+  </div>`;
+}
+
 function renderQuestionAiPanel(question, response) {
   const panel = $('question-ai-panel');
   const prompt = $('question-ai-prompt');
@@ -634,26 +756,28 @@ function renderQuestionAiPanel(question, response) {
   skipButton.disabled = response.aiLoading;
   prompt.hidden = Boolean(response.aiExplanation);
   content.hidden = !response.aiExplanation;
+  content.classList.toggle('streaming', Boolean(response.aiLoading));
   status.hidden = !response.aiLoading && !response.aiError;
   status.className = `question-ai-status${response.aiError ? ' error' : ''}`;
+  if (response.aiLoading) status.textContent = response.aiExplanation ? '正在实时生成解析…' : '正在连接解析服务…';
+  else if (response.aiError) status.textContent = response.aiError;
 
   if (response.aiExplanation) {
-    $('question-ai-text').textContent = response.aiExplanation;
+    renderMarkdown($('question-ai-text'), response.aiExplanation);
     const conversation = Array.isArray(response.aiConversation) ? response.aiConversation : [];
     const messages = $('tutor-messages');
     messages.hidden = !conversation.length;
-    messages.innerHTML = conversation.map((item) => `<div class="tutor-message ${item.role === 'user' ? 'user' : 'assistant'}"><span>${item.role === 'user' ? '你' : '助教'}</span><p>${escapeHtml(item.content)}</p></div>`).join('');
-    $('tutor-input').disabled = Boolean(response.aiFollowupLoading);
-    $('tutor-send').disabled = Boolean(response.aiFollowupLoading);
+    messages.innerHTML = conversation.map((item, index) => tutorMessageMarkup(item, index, conversation, Boolean(response.aiFollowupLoading))).join('');
+    $('tutor-form').hidden = Boolean(response.aiLoading);
+    $('tutor-input').disabled = Boolean(response.aiFollowupLoading || response.aiLoading);
+    $('tutor-send').disabled = Boolean(response.aiFollowupLoading || response.aiLoading);
     const tutorStatus = $('tutor-status');
     tutorStatus.hidden = !response.aiFollowupLoading && !response.aiFollowupError;
     tutorStatus.className = `tutor-status${response.aiFollowupError ? ' error' : ''}`;
-    if (response.aiFollowupLoading) tutorStatus.textContent = '正在整理回答，请稍候…';
+    if (response.aiFollowupLoading) tutorStatus.textContent = '正在实时生成回答…';
     else if (response.aiFollowupError) tutorStatus.textContent = response.aiFollowupError;
     return;
   }
-  if (response.aiLoading) status.textContent = '正在调用 DeepSeek-V4-Flash 生成解析，请稍候…';
-  else if (response.aiError) status.textContent = response.aiError;
 }
 
 function updateOptionState() {
@@ -721,9 +845,11 @@ async function generateCurrentQuestionExplanation() {
   responseState.aiLoading = true;
   responseState.aiSkipped = false;
   responseState.aiError = '';
-  renderCurrentQuestion();
+  responseState.aiExplanation = '';
+  responseState.aiConversation = [];
+  renderQuestionAiPanel(question, responseState);
   try {
-    const apiResponse = await fetch(`${API_BASE}/api/explanations`, {
+    const apiResponse = await fetch(`${API_BASE}/api/explanations/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ questions: [{
@@ -734,20 +860,23 @@ async function generateCurrentQuestionExplanation() {
         userAnswer: responseState.selected
       }] })
     });
-    const result = await apiResponse.json();
-    if (!apiResponse.ok) throw new Error(result.error || '生成解析失败');
-    const analysis = Array.isArray(result.analyses)
-      ? result.analyses.find((item) => String(item.sourceId) === String(question.id))
-      : null;
-    if (!analysis?.explanation) throw new Error('DeepSeek 未返回完整解析，请重试');
-    responseState.aiExplanation = String(analysis.explanation).trim();
-    responseState.aiModel = String(result.model || 'deepseek-v4-flash');
-    responseState.aiConversation = [];
+    await consumeEventStream(apiResponse, {
+      meta: (payload) => { responseState.aiModel = String(payload?.model || 'deepseek-v4-flash'); },
+      delta: (payload) => {
+        if (String(payload?.sourceId || '') !== String(question.id) || !payload?.delta) return;
+        responseState.aiExplanation += String(payload.delta);
+        if (state.session === session && session.current === questionIndex) renderQuestionAiPanel(question, responseState);
+      }
+    });
+    responseState.aiExplanation = responseState.aiExplanation.trim();
+    if (!responseState.aiExplanation) throw new Error('DeepSeek 未返回完整解析，请重试');
   } catch (error) {
+    responseState.aiExplanation = '';
+    responseState.aiConversation = [];
     responseState.aiError = error.message || '生成解析失败，请稍后重试。';
   } finally {
     responseState.aiLoading = false;
-    if (state.session === session && session.current === questionIndex) renderCurrentQuestion();
+    if (state.session === session && session.current === questionIndex) renderQuestionAiPanel(question, responseState);
   }
 }
 
@@ -762,11 +891,20 @@ async function submitQuestionFollowup(event) {
   const message = input.value.trim();
   if (!message || !responseState?.aiExplanation || responseState.aiFollowupLoading) return;
 
+  const previousConversation = Array.isArray(responseState.aiConversation)
+    ? responseState.aiConversation.map((item) => ({ role: item.role, content: item.content }))
+    : [];
+  responseState.aiConversation = [
+    ...previousConversation,
+    { role: 'user', content: message },
+    { role: 'assistant', content: '' }
+  ];
   responseState.aiFollowupLoading = true;
   responseState.aiFollowupError = '';
+  input.value = '';
   renderQuestionAiPanel(question, responseState);
   try {
-    const apiResponse = await fetch(`${API_BASE}/api/tutor`, {
+    const apiResponse = await fetch(`${API_BASE}/api/tutor/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -778,22 +916,27 @@ async function submitQuestionFollowup(event) {
           userAnswer: responseState.selected
         },
         explanation: responseState.aiExplanation,
-        history: Array.isArray(responseState.aiConversation) ? responseState.aiConversation : [],
+        history: previousConversation,
         message
       })
     });
-    const result = await apiResponse.json();
-    if (!apiResponse.ok) throw new Error(result.error || '追问失败');
-    const answer = String(result.answer || '').trim();
-    if (!answer) throw new Error('没有收到完整回答，请重试');
-    responseState.aiConversation = [
-      ...(Array.isArray(responseState.aiConversation) ? responseState.aiConversation : []),
-      { role: 'user', content: message },
-      { role: 'assistant', content: answer }
-    ];
-    input.value = '';
+    await consumeEventStream(apiResponse, {
+      meta: (payload) => { responseState.aiModel = String(payload?.model || responseState.aiModel || 'deepseek-v4-flash'); },
+      delta: (payload) => {
+        if (!payload?.delta) return;
+        const assistantMessage = responseState.aiConversation[responseState.aiConversation.length - 1];
+        if (!assistantMessage || assistantMessage.role !== 'assistant') return;
+        assistantMessage.content += String(payload.delta);
+        if (state.session === session && session.current === questionIndex) renderQuestionAiPanel(question, responseState);
+      }
+    });
+    const assistantMessage = responseState.aiConversation[responseState.aiConversation.length - 1];
+    if (!assistantMessage?.content?.trim()) throw new Error('没有收到完整回答，请重试');
+    assistantMessage.content = assistantMessage.content.trim();
   } catch (error) {
+    responseState.aiConversation = previousConversation;
     responseState.aiFollowupError = error.message || '追问失败，请稍后重试。';
+    input.value = message;
   } finally {
     responseState.aiFollowupLoading = false;
     if (state.session === session && session.current === questionIndex) renderQuestionAiPanel(question, responseState);
@@ -887,6 +1030,7 @@ function renderResultAnalyses(session, wrongItems = getSessionWrongItems(session
   const skipButton = $('result-ai-skip');
   generateButton.disabled = Boolean(session.aiAnalysisLoading);
   skipButton.disabled = Boolean(session.aiAnalysisLoading);
+  status.className = `result-ai-status${session.aiAnalysisError ? ' error' : ''}`;
   list.innerHTML = '';
 
   if (!wrongItems.length) {
@@ -902,20 +1046,32 @@ function renderResultAnalyses(session, wrongItems = getSessionWrongItems(session
   skipButton.hidden = false;
   $('result-ai-title').textContent = `需要解析这 ${wrongItems.length} 道错题吗？`;
 
-  if (session.aiAnalyses.length) {
+  const visibleAnalyses = (Array.isArray(session.aiAnalyses) ? session.aiAnalyses : [])
+    .filter((analysis) => String(analysis?.explanation || '').trim());
+  if (session.aiAnalysisLoading || visibleAnalyses.length) {
     prompt.hidden = true;
     status.hidden = false;
-    status.textContent = `已生成 ${session.aiAnalyses.length} 道错题解析。`;
-    const wrongById = new Map(wrongItems.map((item) => [item.question.id, item]));
-    list.innerHTML = session.aiAnalyses.map((analysis, index) => {
+    const completedCount = Array.isArray(session.aiAnalysisCompletedIds) ? session.aiAnalysisCompletedIds.length : visibleAnalyses.length;
+    status.textContent = session.aiAnalysisLoading
+      ? `正在实时生成错题解析，已完成 ${completedCount} / ${wrongItems.length} 道…`
+      : `已生成 ${visibleAnalyses.length} 道错题解析。`;
+    const wrongById = new Map(wrongItems.map((item) => [String(item.question.id), item]));
+    list.innerHTML = visibleAnalyses.map((analysis, index) => {
       const item = wrongById.get(String(analysis.sourceId));
       if (!item) return '';
       return `<article class="result-ai-item">
         <div class="result-ai-item-top"><span>错题 ${String(index + 1).padStart(2, '0')}</span><span>你的答案：${escapeHtml(item.response.selected.join('、'))}</span><span>正确答案：${escapeHtml(item.question.displayAnswers.join('、'))}</span></div>
         <h2>${escapeHtml(item.question.prompt)}</h2>
-        <p>${escapeHtml(analysis.explanation)}</p>
+        <div class="result-ai-explanation markdown-body">${markdownHtml(analysis.explanation)}</div>
       </article>`;
     }).join('');
+    return;
+  }
+
+  if (session.aiAnalysisError) {
+    prompt.hidden = false;
+    status.hidden = false;
+    status.textContent = session.aiAnalysisError;
     return;
   }
 
@@ -938,6 +1094,7 @@ async function generateResultAnalyses() {
   if (!wrongItems.length) return;
   session.aiAnalysisLoading = true;
   session.aiAnalysisSkipped = false;
+  session.aiAnalysisError = '';
   renderResultAnalyses(session, wrongItems);
   try {
     const questions = wrongItems.map(({ question, response }) => ({
@@ -947,31 +1104,53 @@ async function generateResultAnalyses() {
       answer: question.displayAnswers,
       userAnswer: response.selected
     }));
-    const response = await fetch(`${API_BASE}/api/explanations`, {
+    session.aiAnalyses = questions.map((question) => ({ sourceId: question.sourceId, explanation: '' }));
+    session.aiAnalysisCompletedIds = [];
+    let renderPending = false;
+    const scheduleStreamRender = () => {
+      if (renderPending) return;
+      renderPending = true;
+      window.requestAnimationFrame(() => {
+        renderPending = false;
+        if (state.session === session) renderResultAnalyses(session, wrongItems);
+      });
+    };
+    const response = await fetch(`${API_BASE}/api/explanations/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ questions })
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || '生成解析失败');
-    if (!Array.isArray(result.analyses) || result.analyses.length !== wrongItems.length) throw new Error('解析结果数量不完整，请重试');
-    session.aiAnalyses = result.analyses;
+    await consumeEventStream(response, {
+      delta: (payload) => {
+        if (!payload?.delta) return;
+        const analysis = session.aiAnalyses.find((item) => String(item.sourceId) === String(payload.sourceId));
+        if (!analysis) return;
+        analysis.explanation += String(payload.delta);
+        scheduleStreamRender();
+      },
+      item_done: (payload) => {
+        const sourceId = String(payload?.sourceId || '');
+        if (sourceId && !session.aiAnalysisCompletedIds.includes(sourceId)) session.aiAnalysisCompletedIds.push(sourceId);
+        scheduleStreamRender();
+      }
+    });
+    session.aiAnalyses.forEach((analysis) => { analysis.explanation = String(analysis.explanation || '').trim(); });
+    if (session.aiAnalyses.length !== wrongItems.length || session.aiAnalyses.some((analysis) => !analysis.explanation)) {
+      throw new Error('解析结果数量不完整，请重试');
+    }
   } catch (error) {
-    $('result-ai-prompt').hidden = false;
-    $('result-ai-status').hidden = false;
-    $('result-ai-status').textContent = `${error.message || '生成解析失败，请稍后重试。'}`;
+    session.aiAnalyses = [];
+    session.aiAnalysisCompletedIds = [];
+    session.aiAnalysisError = error.message || '生成解析失败，请稍后重试。';
   } finally {
     session.aiAnalysisLoading = false;
-    if (session.aiAnalyses.length) renderResultAnalyses(session, wrongItems);
-    else {
-      $('result-ai-generate').disabled = false;
-      $('result-ai-skip').disabled = false;
-    }
+    if (state.session === session) renderResultAnalyses(session, wrongItems);
   }
 }
 
 function skipResultAnalyses() {
   if (!state.session || state.session.aiAnalysisLoading) return;
+  state.session.aiAnalysisError = '';
   state.session.aiAnalysisSkipped = true;
   renderResultAnalyses(state.session);
 }

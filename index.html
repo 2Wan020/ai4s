@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=16" />
+    <link rel="stylesheet" href="styles.css?v=17" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -158,7 +158,7 @@ C. 选项三
               <p class="question-ai-status" id="question-ai-status" hidden></p>
               <div class="question-ai-content" id="question-ai-content" hidden>
                 <strong>题目解析</strong>
-                <p id="question-ai-text"></p>
+                <div class="question-ai-text markdown-body" id="question-ai-text"></div>
                 <div class="tutor-followup">
                   <div class="tutor-followup-head"><strong>还有疑问？</strong><small>可以围绕这道题继续追问</small></div>
                   <div class="tutor-messages" id="tutor-messages" aria-live="polite" hidden></div>
@@ -201,6 +201,7 @@ C. 选项三
     </main>
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
-    <script src="app.js?v=19"></script>
+    <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
+    <script src="app.js?v=20"></script>
   </body>
 </html>

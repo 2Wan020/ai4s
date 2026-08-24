@@ -24,8 +24,9 @@ QUIZ_DB_PATH=/var/lib/quiz-site/quiz.db python3 server.py
 - `PUT /api/state`：保存题库、完成记录、错题、设置和最近练习位置。
 - `GET /api/health`：检查服务、SQLite 和 AI 配置状态。
 - `POST /api/import`：导入并拆分题库文件。
-- `POST /api/explanations`：按用户选择生成题目解析。
-- `POST /api/tutor`：携带完整题目和历史问答，继续追问当前解析。
+- `POST /api/explanations/stream`：以 SSE 实时生成一道或多道题目解析。
+- `POST /api/tutor/stream`：携带完整题目和历史问答，以 SSE 实时继续追问当前解析。
+- `POST /api/explanations`、`POST /api/tutor`：保留的非流式兼容接口。
 
 后续接入统一平台账号时，可由可信反向代理写入用户 ID 请求头，并设置 `TUDOU_TRUSTED_IDENTITY_HEADER`。存储层会自动从匿名设备身份切换为平台身份，前端状态结构无需改动。切勿让公网客户端直接控制该请求头。
 
@@ -56,6 +57,8 @@ Word 文档会先转换文本再逐题拆分；加密/受保护的 Office 文档
 ## DeepSeek AI 识别
 
 AI 导入会先执行本地文件提取与拆分，再将结构化题目文字分批发送给 `deepseek-v4-flash`，使用 `response_format: {"type":"json_object"}` 返回固定 JSON。提示词专门处理 OCR 断行、题干错位和粘连选项；服务器会再次校验题目数量、ID、选项和答案对应关系，并根据答案字母数量重新判定单选/多选。导入阶段不生成解析。
+
+逐题解析、答题结束后的错题解析以及解析后的继续追问均使用 SSE：DeepSeek 上游返回最终答案分片后，Python 后端立即转发，页面边接收边显示。`reasoning_content` 不会发送给浏览器。解析与追问使用 Markdown 输出，本地固定版本的 `markdown-it` 负责标题、列表、加粗、引用、代码和表格渲染；原始 HTML 被禁用，危险链接被过滤，外部链接会附加安全属性。
 
 逐题解析使用思考模式生成更具体的依据、错选原因和易混淆点。学生看完解析后可继续追问；由于 DeepSeek Chat API 无状态，后端会在每轮请求中重新提交固定题目上下文、初始解析及成对的历史问答。前端永远不会接触 API Key。
 
