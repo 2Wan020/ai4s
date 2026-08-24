@@ -685,7 +685,10 @@ function buildSession(spec, routeKey = '') {
     responses: questions.map(() => ({
       selected: [], submitted: false, correct: false, hasAnswer: false,
       aiExplanation: '', aiModel: '', aiLoading: false, aiSkipped: false, aiError: '',
-      aiConversation: [], aiFollowupLoading: false, aiFollowupError: ''
+      aiConversation: [], aiFollowupLoading: false, aiFollowupError: '',
+      relatedLoading: false, relatedLoaded: false, relatedError: '',
+      relatedLocal: [], relatedWeb: [], relatedSources: [],
+      relatedSelections: {}, relatedSubmitted: {}
     })),
     autoNextTimer: null,
     aiAnalyses: [],
@@ -772,6 +775,151 @@ function tutorMessageMarkup(item, index, conversation, loading) {
   </div>`;
 }
 
+const RELATED_STOP_TOKENS = new Set([
+  '下列', '以下', '关于', '的是', '属于', '正确', '错误', '说法', '选项', '其中', '可以', '应当',
+  '哪项', '一项', '多项', '根据', '对于', '主要', '体现', '包括', '不包括', '符合', '不符合'
+]);
+
+function relatedQuestionTokens(question) {
+  const optionText = (question.options || []).map((option) => Array.isArray(option) ? option[1] : option?.text).join(' ');
+  const text = `${question.prompt || ''} ${optionText}`.toLowerCase();
+  const tokens = new Set((text.match(/[a-z0-9]{2,}/g) || []).filter((token) => !RELATED_STOP_TOKENS.has(token)));
+  (text.match(/[\u4e00-\u9fff]{2,}/g) || []).forEach((segment) => {
+    for (let index = 0; index < segment.length - 1; index += 1) {
+      const bigram = segment.slice(index, index + 2);
+      if (!RELATED_STOP_TOKENS.has(bigram)) tokens.add(bigram);
+    }
+    for (let index = 0; index < segment.length - 2; index += 1) {
+      const trigram = segment.slice(index, index + 3);
+      if (!RELATED_STOP_TOKENS.has(trigram)) tokens.add(trigram);
+    }
+  });
+  return tokens;
+}
+
+function relatedQuestionScore(sourceTokens, candidate) {
+  const candidateTokens = relatedQuestionTokens(candidate);
+  if (!sourceTokens.size || !candidateTokens.size) return 0;
+  let common = 0;
+  sourceTokens.forEach((token) => { if (candidateTokens.has(token)) common += token.length > 2 ? 1.35 : 1; });
+  return common / Math.sqrt(sourceTokens.size * candidateTokens.size);
+}
+
+function findLocalRelatedQuestions(question, limit = 3) {
+  const sourceTokens = relatedQuestionTokens(question);
+  return allQuestions()
+    .filter((candidate) => candidate.id !== question.id && candidate.options.length >= 2 && questionAnswers(candidate).length)
+    .map((candidate) => ({ candidate, score: relatedQuestionScore(sourceTokens, candidate) }))
+    .filter((item) => item.score >= 0.03)
+    .sort((left, right) => right.score - left.score || String(left.candidate.id).localeCompare(String(right.candidate.id)))
+    .slice(0, limit)
+    .map(({ candidate }) => ({
+      id: candidate.id,
+      source: 'bank',
+      bankName: getBank(candidate.bankId)?.name || candidate.bankName || '题库',
+      prompt: candidate.prompt,
+      options: candidate.options.map(([key, text]) => ({ key, text })),
+      answer: questionAnswers(candidate),
+      type: candidate.type,
+      explanation: candidate.explanation || ''
+    }));
+}
+
+function normaliseExternalRelatedQuestion(raw, index) {
+  if (!raw || typeof raw !== 'object') return null;
+  const options = (Array.isArray(raw.options) ? raw.options : []).map((option, optionIndex) => ({
+    key: String(option?.key || LETTERS[optionIndex] || '').toUpperCase(),
+    text: String(option?.text || '').trim()
+  })).filter((option) => /^[A-H]$/.test(option.key) && option.text);
+  const optionKeys = new Set(options.map((option) => option.key));
+  const answer = [...new Set((Array.isArray(raw.answer) ? raw.answer : []).map((letter) => String(letter).toUpperCase()))]
+    .filter((letter) => optionKeys.has(letter)).sort();
+  const prompt = String(raw.prompt || '').trim();
+  if (!prompt || options.length < 2 || !answer.length) return null;
+  return {
+    id: String(raw.id || `web-related-${index}`),
+    source: 'web',
+    bankName: '联网拓展',
+    prompt,
+    options,
+    answer,
+    type: answer.length > 1 ? 'multi' : 'single',
+    explanation: String(raw.explanation || '').trim(),
+    sourceIndexes: (Array.isArray(raw.sourceIndexes) ? raw.sourceIndexes : []).map(Number).filter(Number.isInteger)
+  };
+}
+
+function normaliseRelatedSource(raw) {
+  try {
+    const url = new URL(String(raw?.url || ''));
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    return { index: Number(raw?.index), title: String(raw?.title || url.hostname).trim(), url: url.href };
+  } catch (_) {
+    return null;
+  }
+}
+
+function relatedQuestionById(response, questionId) {
+  return [...(response.relatedLocal || []), ...(response.relatedWeb || [])]
+    .find((question) => question.id === questionId);
+}
+
+function relatedQuestionMarkup(item, response) {
+  const selected = Array.isArray(response.relatedSelections[item.id]) ? response.relatedSelections[item.id] : [];
+  const submitted = Boolean(response.relatedSubmitted[item.id]);
+  const correct = submitted && sameAnswers([...selected].sort(), [...item.answer].sort());
+  const origin = item.source === 'web' ? '联网拓展' : item.bankName;
+  const options = item.options.map((option) => {
+    const isSelected = selected.includes(option.key);
+    const isCorrect = submitted && item.answer.includes(option.key);
+    const isWrong = submitted && isSelected && !isCorrect;
+    const classes = ['related-option', isSelected ? 'selected' : '', isCorrect ? 'correct' : '', isWrong ? 'wrong' : ''].filter(Boolean).join(' ');
+    return `<button class="${classes}" type="button" data-related-option="${escapeHtml(option.key)}" data-related-id="${escapeHtml(item.id)}" aria-pressed="${isSelected}" ${submitted ? 'disabled' : ''}>
+      <span class="related-option-key">${escapeHtml(option.key)}</span><span>${escapeHtml(option.text)}</span>
+    </button>`;
+  }).join('');
+  const explanation = item.explanation || (item.source === 'bank' ? '原题库未提供解析。' : '暂无解析。');
+  const feedback = submitted ? `<div class="related-feedback${correct ? '' : ' incorrect'}">
+    <strong>${correct ? '回答正确。' : `正确答案：${escapeHtml(item.answer.join('、'))}。`}</strong>
+    <span>${escapeHtml(explanation)}</span>
+  </div>` : '';
+  return `<article class="related-card" data-related-card="${escapeHtml(item.id)}">
+    <div class="related-card-top"><span class="related-origin">${escapeHtml(origin)}</span><span class="related-type">${item.type === 'multi' ? '多选题' : '单选题'}</span></div>
+    <h3>${escapeHtml(item.prompt)}</h3>
+    <div class="related-options">${options}</div>
+    ${submitted ? '' : `<div class="related-card-actions"><span class="related-selection-hint">${item.type === 'multi' ? '可选择多项' : '请选择 1 项'}</span><button class="secondary-button" type="button" data-related-submit="${escapeHtml(item.id)}" ${selected.length ? '' : 'disabled'}>提交答案</button></div>`}
+    ${feedback}
+  </article>`;
+}
+
+function renderRelatedPractice(question, response) {
+  const section = $('related-practice');
+  const visible = Boolean(response.aiExplanation && !response.aiLoading && response.submitted && response.hasAnswer && !response.correct);
+  section.hidden = !visible;
+  if (!visible) return;
+  const button = $('related-generate');
+  button.disabled = Boolean(response.relatedLoading);
+  button.textContent = response.relatedLoading ? '正在获取…' : response.relatedLoaded ? '重新获取' : '获取相关题目';
+  const status = $('related-status');
+  status.hidden = !response.relatedLoading && !response.relatedError;
+  status.className = `related-status${response.relatedError ? ' error' : ''}`;
+  if (response.relatedLoading) status.textContent = `已在题库中找到 ${response.relatedLocal.length} 道，正在联网搜索并生成新题…`;
+  else if (response.relatedError) status.textContent = `${response.relatedError} 题库内匹配结果仍可继续练习。`;
+
+  const results = $('related-results');
+  results.hidden = !response.relatedLoaded && !response.relatedLoading;
+  if (results.hidden) return;
+  $('related-local-list').innerHTML = response.relatedLocal.length
+    ? response.relatedLocal.map((item) => relatedQuestionMarkup(item, response)).join('')
+    : '<p class="related-empty">当前题库暂未找到足够相近且带答案的题目。</p>';
+  $('related-web-list').innerHTML = response.relatedWeb.length
+    ? response.relatedWeb.map((item) => relatedQuestionMarkup(item, response)).join('')
+    : `<p class="related-empty">${response.relatedLoading ? '正在检索公开网页并设计拓展题，请稍候…' : '暂未生成联网拓展题。'}</p>`;
+  const sources = $('related-sources');
+  sources.hidden = !response.relatedSources.length;
+  sources.innerHTML = response.relatedSources.length ? `<strong>联网参考来源</strong><div class="related-source-links">${response.relatedSources.map((source) => `<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(source.index)}. ${escapeHtml(source.title)}</a>`).join('')}</div>` : '';
+}
+
 function renderQuestionAiPanel(question, response) {
   const panel = $('question-ai-panel');
   const prompt = $('question-ai-prompt');
@@ -807,8 +955,10 @@ function renderQuestionAiPanel(question, response) {
     tutorStatus.className = `tutor-status${response.aiFollowupError ? ' error' : ''}`;
     if (response.aiFollowupLoading) tutorStatus.textContent = '正在实时生成回答…';
     else if (response.aiFollowupError) tutorStatus.textContent = response.aiFollowupError;
+    renderRelatedPractice(question, response);
     return;
   }
+  $('related-practice').hidden = true;
 }
 
 function updateOptionState() {
@@ -983,6 +1133,78 @@ function handleTutorInputKeydown(event) {
   if (!input.value.trim() || input.disabled || sendButton.disabled) return;
   if (typeof form.requestSubmit === 'function') form.requestSubmit(sendButton);
   else sendButton.click();
+}
+
+async function generateRelatedQuestions() {
+  const session = state.session;
+  if (!session) return;
+  const questionIndex = session.current;
+  const question = session.questions[questionIndex];
+  const response = session.responses[questionIndex];
+  if (!response?.submitted || response.correct || !response.aiExplanation || response.relatedLoading) return;
+
+  response.relatedLocal = findLocalRelatedQuestions(question);
+  response.relatedWeb = [];
+  response.relatedSources = [];
+  response.relatedSelections = {};
+  response.relatedSubmitted = {};
+  response.relatedLoaded = true;
+  response.relatedLoading = true;
+  response.relatedError = '';
+  renderRelatedPractice(question, response);
+  try {
+    const apiResponse = await fetch(`${API_BASE}/api/related`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: {
+          sourceId: question.id,
+          prompt: question.prompt,
+          options: question.displayOptions.map(([key, text]) => ({ key, text })),
+          answer: question.displayAnswers,
+          userAnswer: response.selected
+        },
+        explanation: response.aiExplanation
+      })
+    });
+    if (!apiResponse.ok) throw new Error(await readApiError(apiResponse, '获取联网相关题失败'));
+    const result = await apiResponse.json();
+    response.relatedWeb = (Array.isArray(result.questions) ? result.questions : [])
+      .map(normaliseExternalRelatedQuestion).filter(Boolean);
+    response.relatedSources = (Array.isArray(result.sources) ? result.sources : [])
+      .map(normaliseRelatedSource).filter(Boolean);
+    if (!response.relatedWeb.length) throw new Error('联网服务未返回可练习的新题。');
+  } catch (error) {
+    response.relatedWeb = [];
+    response.relatedSources = [];
+    response.relatedError = error.message || '获取联网相关题失败，请稍后重试。';
+  } finally {
+    response.relatedLoading = false;
+    if (state.session === session && session.current === questionIndex) renderRelatedPractice(question, response);
+  }
+}
+
+function handleRelatedResultsClick(event) {
+  const action = event.target.closest('[data-related-option],[data-related-submit]');
+  const session = state.session;
+  if (!action || !session) return;
+  const question = session.questions[session.current];
+  const response = session.responses[session.current];
+  const relatedId = String(action.dataset.relatedId || action.dataset.relatedSubmit || '');
+  const relatedQuestion = relatedQuestionById(response, relatedId);
+  if (!relatedQuestion || response.relatedSubmitted[relatedId]) return;
+  if (action.dataset.relatedOption) {
+    const key = String(action.dataset.relatedOption);
+    const selected = Array.isArray(response.relatedSelections[relatedId]) ? response.relatedSelections[relatedId] : [];
+    response.relatedSelections[relatedId] = relatedQuestion.type === 'multi'
+      ? (selected.includes(key) ? selected.filter((answer) => answer !== key) : [...selected, key])
+      : [key];
+  } else {
+    const selected = response.relatedSelections[relatedId] || [];
+    if (!selected.length) return;
+    response.relatedSubmitted[relatedId] = true;
+  }
+  renderRelatedPractice(question, response);
 }
 
 function skipCurrentQuestionExplanation() {
@@ -1328,6 +1550,8 @@ $('question-ai-generate').addEventListener('click', generateCurrentQuestionExpla
 $('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);
 $('tutor-form').addEventListener('submit', submitQuestionFollowup);
 $('tutor-input').addEventListener('keydown', handleTutorInputKeydown);
+$('related-generate').addEventListener('click', generateRelatedQuestions);
+$('related-results').addEventListener('click', handleRelatedResultsClick);
 $('next-button').addEventListener('click', nextQuestion);
 $('previous-button').addEventListener('click', previousQuestion);
 $('result-ai-generate').addEventListener('click', generateResultAnalyses);

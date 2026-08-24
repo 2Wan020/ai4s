@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=19" />
+    <link rel="stylesheet" href="styles.css?v=20" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -175,6 +175,24 @@ C. 选项三
                   </form>
                   <p class="tutor-status" id="tutor-status" role="status" hidden></p>
                 </div>
+                <div class="related-practice" id="related-practice" hidden>
+                  <div class="related-practice-head">
+                    <div><strong>继续巩固这道错题</strong><small>搜索题库，并联网生成新的相关练习</small></div>
+                    <button class="secondary-button" type="button" id="related-generate">获取相关题目</button>
+                  </div>
+                  <p class="related-status" id="related-status" role="status" hidden></p>
+                  <div class="related-results" id="related-results" aria-live="polite" hidden>
+                    <section class="related-group">
+                      <div class="related-group-head"><strong>题库内相关题</strong><small>根据题干与选项匹配</small></div>
+                      <div class="related-list" id="related-local-list"></div>
+                    </section>
+                    <section class="related-group">
+                      <div class="related-group-head"><strong>联网拓展题</strong><small>根据公开搜索结果重新设计</small></div>
+                      <div class="related-list" id="related-web-list"></div>
+                    </section>
+                    <div class="related-sources" id="related-sources" hidden></div>
+                  </div>
+                </div>
               </div>
             </section>
             <div class="quiz-actions">
@@ -208,6 +226,6 @@ C. 选项三
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=23"></script>
+    <script src="app.js?v=24"></script>
   </body>
 </html>

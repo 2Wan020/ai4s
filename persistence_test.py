@@ -180,6 +180,85 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["answer"], "针对追问：为什么？")
 
+    def test_so_search_results_are_sanitised_and_limited(self):
+        payload = b'''<!doctype html><html><body>
+        <li class="res-list"><h3 class="res-title"><a href="https://www.so.com/link?one" data-mdurl="https://example.com/one">Related &amp; useful</a></h3><p class="res-desc"><b>Summary</b> text</p></li>
+        <li class="res-list"><h3><a data-mdurl="https://example.com/one">Duplicate</a></h3><p class="res-desc">ignored</p></li>
+        <li class="res-list"><h3><a data-mdurl="javascript:alert(1)">Unsafe</a></h3><p class="res-desc">ignored</p></li>
+        <li class="res-list"><h3><a data-mdurl="http://example.org/two">Second result</a></h3><p class="res-desc">Another summary</p></li>
+        </body></html>'''
+        results = server.parse_so_search_results(payload, limit=2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], {
+            "index": 1,
+            "title": "Related & useful",
+            "url": "https://example.com/one",
+            "snippet": "Summary text",
+        })
+        self.assertEqual(results[1]["index"], 2)
+        self.assertEqual(results[1]["url"], "http://example.org/two")
+
+    def test_related_endpoint_combines_web_search_and_structured_questions(self):
+        opener, _ = self.browser()
+        original_api_key = server.load_deepseek_api_key
+        original_search = server.search_web_for_related_questions
+        original_generate = server.generate_related_web_questions
+        sources = [{
+            "index": 1,
+            "title": "公开练习资料",
+            "url": "https://example.com/practice",
+            "snippet": "示例知识点摘要",
+        }]
+        generated = [{
+            "id": "web-related-test",
+            "prompt": "一道新的相关题？",
+            "options": [
+                {"key": "A", "text": "正确"},
+                {"key": "B", "text": "错误一"},
+                {"key": "C", "text": "错误二"},
+                {"key": "D", "text": "错误三"},
+            ],
+            "answer": ["A"],
+            "type": "single",
+            "explanation": "A 符合题意。",
+            "sourceIndexes": [1],
+        }, {
+            "id": "web-related-test-2",
+            "prompt": "另一道新的相关题？",
+            "options": [
+                {"key": "A", "text": "正确一"},
+                {"key": "B", "text": "正确二"},
+                {"key": "C", "text": "错误一"},
+                {"key": "D", "text": "错误二"},
+            ],
+            "answer": ["A", "B"],
+            "type": "multi",
+            "explanation": "A、B 符合题意。",
+            "sourceIndexes": [1],
+        }]
+        server.load_deepseek_api_key = lambda: "test-key"
+        server.search_web_for_related_questions = lambda question: sources
+        server.generate_related_web_questions = lambda api_key, question, explanation, web_sources: generated
+        try:
+            status, result = self.api(opener, "/api/related", "POST", {
+                "question": {
+                    "sourceId": "q-related",
+                    "prompt": "原题？",
+                    "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
+                    "answer": ["A"],
+                    "userAnswer": ["B"],
+                },
+                "explanation": "原题解析。",
+            })
+        finally:
+            server.load_deepseek_api_key = original_api_key
+            server.search_web_for_related_questions = original_search
+            server.generate_related_web_questions = original_generate
+        self.assertEqual(status, 200)
+        self.assertEqual(result["questions"], generated)
+        self.assertEqual(result["sources"], [{"index": 1, "title": "公开练习资料", "url": "https://example.com/practice"}])
+        self.assertEqual(result["searchProvider"], "360搜索")
+
     def test_deepseek_stream_ignores_reasoning_and_forwards_markdown(self):
         class FakeResponse:
             def __enter__(self):

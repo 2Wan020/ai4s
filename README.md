@@ -26,6 +26,7 @@ QUIZ_DB_PATH=/var/lib/quiz-site/quiz.db python3 server.py
 - `POST /api/import`：导入并拆分题库文件。
 - `POST /api/explanations/stream`：以 SSE 实时生成一道或多道题目解析。
 - `POST /api/tutor/stream`：携带完整题目和历史问答，以 SSE 实时继续追问当前解析。
+- `POST /api/related`：联网搜索公开资料，并生成带答案、解析和来源链接的相关练习题。
 - `POST /api/explanations`、`POST /api/tutor`：保留的非流式兼容接口。
 
 后续接入统一平台账号时，可由可信反向代理写入用户 ID 请求头，并设置 `TUDOU_TRUSTED_IDENTITY_HEADER`。存储层会自动从匿名设备身份切换为平台身份，前端状态结构无需改动。切勿让公网客户端直接控制该请求头。
@@ -61,5 +62,7 @@ AI 导入会先执行本地文件提取与拆分，再将结构化题目文字�
 逐题解析、答题结束后的错题解析以及解析后的继续追问均使用 SSE：DeepSeek 上游返回最终答案分片后，Python 后端立即转发，页面边接收边显示。`reasoning_content` 不会发送给浏览器。解析与追问使用 Markdown 输出，本地固定版本的 `markdown-it` 负责标题、列表、加粗、引用、代码和表格渲染；原始 HTML 被禁用，危险链接被过滤，外部链接会附加安全属性。
 
 逐题解析使用思考模式生成更具体的依据、错选原因和易混淆点。学生看完解析后可继续追问，追问输入框支持 Enter 发送、Shift+Enter 换行；由于 DeepSeek Chat API 无状态，后端会在每轮请求中重新提交固定题目上下文、初始解析及成对的历史问答。前端永远不会接触 API Key。
+
+答错并看完逐题解析后，可以点击“获取相关题目”。页面会先在全部已导入题库中使用中文二元/三元词组相似度匹配带答案的题目，再通过 360 搜索检索相关知识点；服务器只读取搜索标题、短摘要和原始链接，由 DeepSeek 固定 JSON 重新设计两道原创拓展题。题库内题目与联网拓展题均可直接选择并提交，提交后才展示答案和解析；联网来源以安全外链列出。每个用户默认每小时最多生成 30 次联网相关题。
 
 生产服务使用 systemd credential 读取 `/etc/quiz-site/deepseek_api_key`，API Key 不应写入网页、JavaScript、Git 仓库或普通日志。
