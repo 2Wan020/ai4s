@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+data/
+*.db
+*.db-shm
+*.db-wal
+qa-*.png
+.tools/
+.DS_Store

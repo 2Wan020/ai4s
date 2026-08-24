@@ -1,0 +1,27 @@
+[Unit]
+Description=Standalone Quiz Practice Website
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/quiz-site
+StateDirectory=quiz-site
+StateDirectoryMode=0700
+UMask=0077
+Environment=QUIZ_DB_PATH=/var/lib/quiz-site/quiz.db
+Environment=DEEPSEEK_MODEL=deepseek-v4-flash
+Environment=DEEPSEEK_BASE_URL=https://api.deepseek.com
+Environment=AI_IMPORTS_PER_HOUR=8
+LoadCredential=deepseek_api_key:/etc/quiz-site/deepseek_api_key
+ExecStart=/usr/bin/python3 /opt/quiz-site/server.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

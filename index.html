@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f8f83" />
+    <title>土豆题库 · 独立题库刷题站</title>
+    <link rel="stylesheet" href="styles.css?v=14" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <header class="topbar shell">
+      <button class="brand" type="button" data-nav="#/banks" aria-label="返回题库列表">
+        <span class="brand-mark">土</span>
+        <span><strong>土豆题库</strong><small>一文件 · 一题库 · 一题一卡</small></span>
+      </button>
+      <nav class="topnav" aria-label="主要导航">
+        <span class="sync-status" id="sync-status" data-state="saving" role="status" aria-live="polite">连接存储</span>
+        <button type="button" id="global-wrong-button">错题集 <span id="nav-wrong-count">0</span></button>
+      </nav>
+    </header>
+
+    <main class="shell app-main">
+      <section class="view" id="view-library">
+        <div class="library-toolbar">
+          <div>
+            <p class="eyebrow">MY QUESTION BANKS</p>
+            <h1>我的题库</h1>
+          </div>
+          <div class="library-tools">
+            <label class="search-box"><span>⌕</span><input id="bank-search" type="search" placeholder="搜索题库名称" /></label>
+            <button class="primary-button compact-button" type="button" id="hero-import-button">＋ 导入 Word</button>
+          </div>
+        </div>
+
+        <section class="import-panel" id="import-panel" hidden>
+          <div class="import-panel-top">
+            <p class="eyebrow">WORD IMPORT</p>
+            <button class="collapse-import" type="button" id="close-import" aria-label="收起 Word 导入面板">收起导入面板 ↑</button>
+          </div>
+          <div class="import-copy">
+            <h2>导入 Word 题库</h2>
+            <p>支持题后答案、题干尾部答案（如“题目（ABC）”）、文末答案表及加粗正确选项。</p>
+          </div>
+          <label class="drop-zone" for="word-file">
+            <span class="upload-icon">↑</span>
+            <strong>选择 .doc / .docx 文件</strong>
+            <small>单个文件不超过 10 MB，导入后自动进入该题库</small>
+            <input id="word-file" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          </label>
+          <div class="ai-import-options" role="radiogroup" aria-label="题库识别方式">
+            <label class="ai-import-option featured">
+              <input id="ai-recognition" type="radio" name="recognition-mode" value="ai" checked />
+              <span class="check-visual" aria-hidden="true">✓</span>
+              <span><strong>DeepSeek 精确识别 <em>推荐</em></strong><small>使用 V4-Flash 固定 JSON 校正题干、选项和答案</small></span>
+            </label>
+            <label class="ai-import-option">
+              <input id="local-recognition" type="radio" name="recognition-mode" value="local" />
+              <span class="check-visual" aria-hidden="true">✓</span>
+              <span><strong>普通识别</strong><small>使用服务器本地规则拆题，不调用 AI，速度更快</small></span>
+            </label>
+            <p class="ai-privacy">精确识别仅发送 Word 中提取的题目文字；普通识别不调用外部 API。导入阶段均不生成 AI 解析，API Key 始终保存在服务器端。</p>
+          </div>
+          <div class="import-status" id="import-status" role="status"></div>
+          <details class="format-help">
+            <summary>支持的答案格式</summary>
+            <pre>1. 下列说法正确的是（AC）
+A. 选项一
+B. 选项二
+C. 选项三
+
+或：答案：A、C
+或文末：参考答案：1.AC 2.B</pre>
+          </details>
+        </section>
+
+        <div class="bank-grid" id="bank-grid"></div>
+      </section>
+
+      <section class="view" id="view-bank" hidden>
+        <button class="back-button" type="button" data-nav="#/banks">← 返回题库列表</button>
+        <div class="bank-hero">
+          <div class="bank-hero-icon">▱</div>
+          <div class="bank-hero-copy"><p class="eyebrow">QUESTION BANK</p><h1 id="bank-title">题库</h1><p id="bank-filename">文件名</p></div>
+          <div class="bank-hero-stats"><span><strong id="bank-total">0</strong>全部题目</span><span><strong id="bank-single">0</strong>单选题</span><span><strong id="bank-multi">0</strong>多选题</span><span><strong id="bank-wrong">0</strong>错题</span></div>
+        </div>
+
+        <div class="page-heading"><div><p class="eyebrow">CHOOSE A MODE</p><h2>选择答题模式</h2></div><p>所有模式均为一题一页，提交后再进入下一题。</p></div>
+        <div class="mode-grid" id="mode-grid"></div>
+      </section>
+
+      <section class="view" id="view-wrongbook" hidden>
+        <button class="back-button" type="button" id="wrongbook-back">← 返回</button>
+        <div class="wrongbook-head">
+          <div>
+            <p class="eyebrow">WRONG QUESTION COLLECTION</p>
+            <h1 id="wrongbook-title">错题集</h1>
+            <p id="wrongbook-subtitle">答错的题目会自动保存在这里。</p>
+          </div>
+          <div class="wrongbook-head-count"><strong id="wrongbook-count">0</strong><span>道错题</span></div>
+        </div>
+        <div class="wrongbook-actions">
+          <button class="primary-button" type="button" id="wrongbook-practice">开始错题练习 <span>→</span></button>
+          <button class="danger-button" type="button" id="wrongbook-clear">清空错题集</button>
+        </div>
+        <div class="wrongbook-list" id="wrongbook-list"></div>
+      </section>
+
+      <section class="view" id="view-mock" hidden>
+        <button class="back-button" type="button" id="mock-back">← 返回模式选择</button>
+        <div class="mock-layout">
+          <div class="mock-copy">
+            <p class="eyebrow">CUSTOM MOCK PRACTICE</p>
+            <h1>模拟练习组卷</h1>
+            <p id="mock-bank-name">从当前题库中选择单选题、多选题数量，随机组成一套练习。</p>
+            <div class="mock-feature"><span>01</span><div><strong>按题型抽题</strong><small>分别设置单选和多选数量</small></div></div>
+            <div class="mock-feature"><span>02</span><div><strong>自动随机</strong><small>题目与选项顺序均会打乱</small></div></div>
+            <div class="mock-feature"><span>03</span><div><strong>完成报告</strong><small>查看正确率并自动收录错题</small></div></div>
+          </div>
+          <form class="mock-form" id="mock-form">
+            <div class="mock-form-head"><span>组卷设置</span><strong id="mock-total">共 0 题</strong></div>
+            <label class="count-field"><span><strong>单选题</strong><small id="mock-single-help">可选 0 题</small></span><input id="mock-single-count" type="number" min="0" value="0" /></label>
+            <label class="count-field"><span><strong>多选题</strong><small id="mock-multi-help">可选 0 题</small></span><input id="mock-multi-count" type="number" min="0" value="0" /></label>
+            <div class="mock-summary"><span>答题顺序</span><strong>随机题目 + 随机选项</strong></div>
+            <p class="form-error" id="mock-error" hidden></p>
+            <button class="primary-button wide" type="submit">生成练习并开始 <span>→</span></button>
+          </form>
+        </div>
+      </section>
+
+      <section class="view practice-view" id="view-practice" hidden>
+        <div class="practice-shell">
+          <div class="practice-topbar">
+            <button class="back-button" type="button" id="practice-back">← 退出练习</button>
+            <div class="practice-identity"><span id="practice-bank">题库</span><strong id="practice-mode">顺序单选</strong></div>
+            <span class="practice-counter" id="practice-count">1 / 1</span>
+          </div>
+          <div class="practice-progress"><span id="practice-progress"></span></div>
+          <div class="practice-preferences">
+            <label class="auto-next-option" for="auto-next-correct">
+              <input type="checkbox" id="auto-next-correct" />
+              <span class="auto-next-check" aria-hidden="true">✓</span>
+              <span class="auto-next-copy"><strong>答对后自动下一题</strong><small>答错时仍停留，方便查看答案与解析</small></span>
+            </label>
+          </div>
+          <article class="quiz-card">
+            <div class="quiz-card-top"><span class="question-number" id="question-number">01</span><span class="type-badge" id="question-type">单选题 · 请选择 1 项</span></div>
+            <h1 id="quiz-question"></h1>
+            <div class="options" id="quiz-options"></div>
+            <div class="answer-feedback" id="answer-feedback" hidden></div>
+            <section class="question-ai-panel" id="question-ai-panel" aria-live="polite" hidden>
+              <div class="question-ai-prompt" id="question-ai-prompt">
+                <div><span>AI 解析</span><strong>是否查看这道题的 AI 解析？</strong><small>只有确认后才会调用 DeepSeek-V4-Flash。</small></div>
+                <div class="question-ai-actions"><button class="secondary-button" type="button" id="question-ai-generate">查看解析</button><button class="ghost-button" type="button" id="question-ai-skip">暂不查看</button></div>
+              </div>
+              <p class="question-ai-status" id="question-ai-status" hidden></p>
+              <div class="question-ai-content" id="question-ai-content" hidden><strong><span id="question-ai-model">deepseek-v4-flash</span> 解析</strong><p id="question-ai-text"></p></div>
+            </section>
+            <div class="quiz-actions">
+              <button class="ghost-button" type="button" id="previous-button">上一题</button>
+              <button class="secondary-button" type="button" id="submit-button">提交答案</button>
+              <button class="primary-button" type="button" id="next-button" hidden>下一题 <span>→</span></button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-result" hidden>
+        <div class="result-card">
+          <span class="result-mark">✓</span>
+          <p class="eyebrow">SESSION COMPLETE</p>
+          <h1>本次练习完成</h1>
+          <p id="result-subtitle">继续保持。</p>
+          <div class="result-stats"><div><strong id="result-total">0</strong><span>完成题目</span></div><div><strong id="result-correct">0</strong><span>回答正确</span></div><div><strong id="result-accuracy">0%</strong><span>正确率</span></div></div>
+          <section class="result-ai-panel" id="result-ai-panel" aria-live="polite">
+            <div class="result-ai-prompt" id="result-ai-prompt">
+              <div><strong id="result-ai-title">需要 AI 解析本次错题吗？</strong><small id="result-ai-copy">只有确认后才会调用 DeepSeek-V4-Flash。</small></div>
+              <div class="result-ai-choice"><button class="secondary-button" type="button" id="result-ai-generate">生成错题解析</button><button class="ghost-button" type="button" id="result-ai-skip">暂不需要</button></div>
+            </div>
+            <p class="result-ai-status" id="result-ai-status" hidden></p>
+            <div class="result-ai-list" id="result-ai-list"></div>
+          </section>
+          <div class="result-actions"><button class="secondary-button" type="button" id="result-bank-button">返回题库</button><button class="primary-button" type="button" id="result-again-button">再练一次 <span>→</span></button></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
+    <script src="app.js?v=16"></script>
+  </body>
+</html>
