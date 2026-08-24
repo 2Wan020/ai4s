@@ -16,6 +16,7 @@ const MODE_CONFIG = {
   mock: { label: '模拟练习', type: 'any', shuffleQuestions: true, shuffleOptions: true },
   wrong: { label: '错题练习', type: 'any', shuffleQuestions: false, shuffleOptions: false }
 };
+const OPTION_ORDER_MODES = new Set(['ordered-single', 'ordered-multi', 'random-single', 'random-multi']);
 
 const $ = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
@@ -480,6 +481,52 @@ function navigate(hash) {
   if (location.hash === hash) renderRoute(); else location.hash = hash;
 }
 
+function askOptionOrder(mode) {
+  const dialog = $('option-order-dialog');
+  const label = MODE_CONFIG[mode]?.label || '本次练习';
+  if (!dialog || typeof dialog.showModal !== 'function') {
+    return Promise.resolve(window.confirm(`${label}：是否打乱每道题的选项顺序？\n\n确定：打乱选项\n取消：保持原顺序`));
+  }
+  if (dialog.open) dialog.close();
+  $('option-order-mode').textContent = label;
+  return new Promise((resolve) => {
+    let settled = false;
+    const keepButton = $('option-order-keep');
+    const shuffleButton = $('option-order-shuffle');
+    const closeButton = $('option-order-close');
+    const cancelButton = $('option-order-cancel');
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      dialog.removeEventListener('cancel', handleCancel);
+      keepButton.onclick = null;
+      shuffleButton.onclick = null;
+      closeButton.onclick = null;
+      cancelButton.onclick = null;
+      if (dialog.open) dialog.close();
+      resolve(value);
+    };
+    const handleCancel = (event) => {
+      event.preventDefault();
+      finish(null);
+    };
+    keepButton.onclick = () => finish(false);
+    shuffleButton.onclick = () => finish(true);
+    closeButton.onclick = () => finish(null);
+    cancelButton.onclick = () => finish(null);
+    dialog.addEventListener('cancel', handleCancel);
+    dialog.showModal();
+    window.requestAnimationFrame(() => keepButton.focus());
+  });
+}
+
+async function startTypedPractice(bank, mode) {
+  const shuffleOptions = await askOptionOrder(mode);
+  if (shuffleOptions === null) return;
+  const optionOrder = shuffleOptions ? 'shuffle' : 'fixed';
+  navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}/${optionOrder}`);
+}
+
 function routeParts() {
   const hash = location.hash || '#/banks';
   return hash.replace(/^#\/?/, '').split('/').filter(Boolean).map((part) => decodeURIComponent(part));
@@ -519,8 +566,8 @@ function renderLibrary() {
 const MODE_CARDS = [
   { key: 'ordered-single', icon: '01', title: '顺序单选', description: '按原题目顺序，只练单选题。' },
   { key: 'ordered-multi', icon: '02', title: '顺序多选', description: '按原题目顺序，只练多选题。' },
-  { key: 'random-single', icon: '↝', title: '乱序单选', description: '随机题目与选项，只练单选题。' },
-  { key: 'random-multi', icon: '⌁', title: '乱序多选', description: '随机题目与选项，只练多选题。' },
+  { key: 'random-single', icon: '↝', title: '乱序单选', description: '随机题目顺序，只练单选题。' },
+  { key: 'random-multi', icon: '⌁', title: '乱序多选', description: '随机题目顺序，只练多选题。' },
   { key: 'mock', icon: '▤', title: '模拟练习', description: '自定义单选、多选数量组成一套练习。' },
   { key: 'wrong', icon: '↺', title: '错题练习', description: '只练当前题库中曾经答错的题目。' },
   { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出当前题库的错题。' }
@@ -550,6 +597,7 @@ function renderBank(bank) {
     const mode = button.dataset.mode;
     if (mode === 'mock') navigate(`#/bank/${encodeURIComponent(bank.id)}/mock`);
     else if (mode === 'wrongbook') navigate(`#/bank/${encodeURIComponent(bank.id)}/wrongbook`);
+    else if (OPTION_ORDER_MODES.has(mode)) startTypedPractice(bank, mode);
     else navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}`);
   }));
 
@@ -638,6 +686,7 @@ function prepareQuestion(question, shouldShuffleOptions) {
 
 function buildSession(spec, routeKey = '') {
   const config = MODE_CONFIG[spec.mode];
+  const shouldShuffleOptions = typeof spec.shuffleOptions === 'boolean' ? spec.shuffleOptions : config.shuffleOptions;
   let bank = spec.bankId === 'all' ? null : getBank(spec.bankId);
   let source = bank ? [...bank.questions] : allQuestions();
   if (spec.mode === 'wrong') source = source.filter((question) => wrongSet.has(question.id));
@@ -647,14 +696,15 @@ function buildSession(spec, routeKey = '') {
     source = shuffle([...singles, ...multis]);
   } else source = source.filter((question) => question.type === config.type);
   if (config.shuffleQuestions && spec.mode !== 'mock') source = shuffle(source);
-  const questions = source.map((question) => prepareQuestion(question, config.shuffleOptions));
+  const questions = source.map((question) => prepareQuestion(question, shouldShuffleOptions));
+  const optionOrderLabel = OPTION_ORDER_MODES.has(spec.mode) ? ` · ${shouldShuffleOptions ? '选项乱序' : '选项原序'}` : '';
   return {
     spec,
     routeKey,
     bankId: spec.bankId,
     bankName: bank ? bank.name : '全部题库',
     mode: spec.mode,
-    modeLabel: config.label,
+    modeLabel: `${config.label}${optionOrderLabel}`,
     questions,
     current: 0,
     responses: questions.map(() => ({
@@ -1169,7 +1219,11 @@ function renderRoute() {
         if (parts[3] === 'mock') {
           if (!state.mockConfig || state.mockConfig.bankId !== bank.id) { navigate(`#/bank/${encodeURIComponent(bank.id)}/mock`); return; }
           beginSession({ bankId: bank.id, mode: 'mock', singleCount: state.mockConfig.singleCount, multiCount: state.mockConfig.multiCount }, routeKey);
-        } else beginSession({ bankId: bank.id, mode: parts[3] }, routeKey);
+        } else {
+          const optionOrder = parts[4];
+          const shuffleOptions = optionOrder === 'shuffle' ? true : optionOrder === 'fixed' ? false : undefined;
+          beginSession({ bankId: bank.id, mode: parts[3], ...(typeof shuffleOptions === 'boolean' ? { shuffleOptions } : {}) }, routeKey);
+        }
       } else renderCurrentQuestion();
       return;
     }

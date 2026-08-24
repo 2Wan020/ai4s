@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=17" />
+    <link rel="stylesheet" href="styles.css?v=18" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -87,7 +87,7 @@ C. 选项三
           <div class="bank-hero-stats"><span><strong id="bank-total">0</strong>全部题目</span><span><strong id="bank-single">0</strong>单选题</span><span><strong id="bank-multi">0</strong>多选题</span><span><strong id="bank-wrong">0</strong>错题</span></div>
         </div>
 
-        <div class="page-heading"><div><p class="eyebrow">CHOOSE A MODE</p><h2>选择答题模式</h2></div><p>所有模式均为一题一页，提交后再进入下一题。</p></div>
+        <div class="page-heading"><div><p class="eyebrow">CHOOSE A MODE</p><h2>选择答题模式</h2></div><p>进入单选或多选练习前，可选择是否打乱选项顺序。</p></div>
         <div class="mode-grid" id="mode-grid"></div>
       </section>
 
@@ -201,7 +201,28 @@ C. 选项三
     </main>
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
+    <dialog class="option-order-dialog" id="option-order-dialog" aria-labelledby="option-order-title" aria-describedby="option-order-description">
+      <div class="option-order-card">
+        <button class="dialog-close" type="button" id="option-order-close" aria-label="取消并关闭">×</button>
+        <p class="eyebrow">BEFORE PRACTICE</p>
+        <h2 id="option-order-title">是否打乱选项顺序？</h2>
+        <p id="option-order-description"><span id="option-order-mode">本次练习</span>的题目范围不变，仅调整每道题中选项的显示顺序。</p>
+        <div class="option-order-choices">
+          <button class="option-order-choice" type="button" id="option-order-keep">
+            <span class="option-order-preview">A · B · C · D</span>
+            <strong>保持原顺序</strong>
+            <small>选项按照题库文件中的顺序显示</small>
+          </button>
+          <button class="option-order-choice featured" type="button" id="option-order-shuffle">
+            <span class="option-order-preview">C · A · D · B</span>
+            <strong>打乱选项</strong>
+            <small>每道题重新排列选项，答案会自动对应</small>
+          </button>
+        </div>
+        <button class="dialog-cancel" type="button" id="option-order-cancel">取消</button>
+      </div>
+    </dialog>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=20"></script>
+    <script src="app.js?v=21"></script>
   </body>
 </html>
