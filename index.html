@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=21" />
+    <link rel="stylesheet" href="styles.css?v=22" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -101,7 +101,7 @@ C. 选项三
         <button class="back-button" type="button" id="wrongbook-back">← 返回</button>
         <div class="wrongbook-head">
           <div>
-            <p class="eyebrow">WRONG QUESTION COLLECTION</p>
+            <p class="eyebrow" id="wrongbook-eyebrow">WRONG QUESTION COLLECTION</p>
             <h1 id="wrongbook-title">错题集</h1>
             <p id="wrongbook-subtitle">答错或收藏的题目会自动保存在这里。</p>
           </div>
@@ -205,6 +205,12 @@ C. 选项三
               <button class="ghost-button" type="button" id="previous-button">上一题</button>
               <button class="secondary-button" type="button" id="submit-button">提交答案</button>
               <button class="primary-button" type="button" id="next-button" hidden>下一题 <span>→</span></button>
+              <form class="question-jump-form" id="question-jump-form" title="按本次练习中的题号跳转" novalidate>
+                <label for="question-jump-input">跳转到</label>
+                <input type="number" id="question-jump-input" min="1" step="1" inputmode="numeric" autocomplete="off" aria-label="要跳转到的题号" required />
+                <span>题</span>
+                <button type="submit">跳转</button>
+              </form>
             </div>
           </article>
         </div>
@@ -232,6 +238,6 @@ C. 选项三
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=26"></script>
+    <script src="app.js?v=27"></script>
   </body>
 </html>

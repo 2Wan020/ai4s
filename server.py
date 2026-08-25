@@ -2248,9 +2248,13 @@ def validate_profile_state(raw_state) -> dict:
 
     total_questions = 0
     for bank in banks:
-        if not isinstance(bank, dict) or not isinstance(bank.get("questions", []), list):
+        if (
+            not isinstance(bank, dict)
+            or not isinstance(bank.get("questions", []), list)
+            or not isinstance(bank.get("savedRelatedQuestions", []), list)
+        ):
             raise ValueError("题库数据格式不正确")
-        total_questions += len(bank.get("questions", []))
+        total_questions += len(bank.get("questions", [])) + len(bank.get("savedRelatedQuestions", []))
         if total_questions > MAX_PROFILE_QUESTIONS:
             raise ValueError(f"题目总数不能超过 {MAX_PROFILE_QUESTIONS} 道")
 

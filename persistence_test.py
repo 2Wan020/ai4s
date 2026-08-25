@@ -66,6 +66,7 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
     @staticmethod
     def sample_state(bank_id="bank-a", completed=True):
         question_id = f"{bank_id}::q1"
+        saved_related_id = f"{bank_id}::saved-related-q2"
         return {
             "version": 1,
             "banks": [{
@@ -80,10 +81,19 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
                     "answer": ["A"],
                     "type": "single",
                 }],
+                "savedRelatedQuestions": [{
+                    "id": saved_related_id,
+                    "sourceId": "saved-related-q2",
+                    "prompt": "收藏的相关题能否持久保存？",
+                    "options": [["A", "可以"], ["B", "不可以"]],
+                    "answer": ["A"],
+                    "type": "single",
+                    "relatedSaved": True,
+                }],
             }],
             "completed": [question_id] if completed else [],
             "wrong": [],
-            "favorites": [question_id],
+            "favorites": [question_id, saved_related_id],
             "preferences": {"autoNextCorrect": True, "shuffleOptions": True},
             "lastPractice": {
                 "routeKey": f"#/bank/{bank_id}/practice/ordered-single",

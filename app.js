@@ -17,7 +17,8 @@ const MODE_CONFIG = {
   'random-single': { label: '乱序单选', type: 'single', shuffleQuestions: true, shuffleOptions: true },
   'random-multi': { label: '乱序多选', type: 'multi', shuffleQuestions: true, shuffleOptions: true },
   mock: { label: '模拟练习', type: 'any', shuffleQuestions: true, shuffleOptions: true },
-  wrong: { label: '错题练习', type: 'any', shuffleQuestions: false, shuffleOptions: false }
+  wrong: { label: '错题练习', type: 'any', shuffleQuestions: false, shuffleOptions: false },
+  favorite: { label: '收藏练习', type: 'any', shuffleQuestions: false, shuffleOptions: false }
 };
 const OPTION_ORDER_MODES = new Set(['ordered-single', 'ordered-multi', 'random-single', 'random-multi']);
 
@@ -262,6 +263,13 @@ function normaliseBank(bank) {
   const name = bank.name || '导入题库';
   const rawQuestions = Array.isArray(bank.questions) ? bank.questions : [];
   const questions = rawQuestions.map((question, index) => normaliseQuestion(question, id, name, index));
+  const rawSavedRelated = Array.isArray(bank.savedRelatedQuestions) ? bank.savedRelatedQuestions : [];
+  const savedRelatedQuestions = rawSavedRelated.map((question, index) => normaliseQuestion(
+    question,
+    id,
+    name,
+    rawQuestions.length + index
+  ));
   return {
     ...bank,
     id,
@@ -270,6 +278,7 @@ function normaliseBank(bank) {
     importedAt: bank.importedAt || new Date().toISOString(),
     normalisationVersion: BANK_NORMALISATION_VERSION,
     questions,
+    savedRelatedQuestions,
     questionCount: questions.length,
     singleCount: questions.filter((question) => question.type === 'single').length,
     multiCount: questions.filter((question) => question.type === 'multi').length
@@ -334,7 +343,8 @@ const state = {
 };
 
 function allBanks() { return importedBanks; }
-function allQuestions() { return allBanks().flatMap((bank) => bank.questions); }
+function bankAllQuestions(bank) { return [...(bank?.questions || []), ...(bank?.savedRelatedQuestions || [])]; }
+function allQuestions() { return allBanks().flatMap((bank) => bankAllQuestions(bank)); }
 function getBank(bankId) { return allBanks().find((bank) => bank.id === bankId); }
 function markProfileChanged() {
   setLocalStateDirty(true);
@@ -524,11 +534,25 @@ function clearPracticeBookmark() {
 function questionAnswers(question) { return [...new Set((question.answer || []).map((answer) => String(answer).toUpperCase()))].sort(); }
 function sameAnswers(left, right) { return left.length === right.length && left.every((answer, index) => answer === right[index]); }
 function isWrongbookQuestion(questionId) { return wrongSet.has(questionId) || favoriteSet.has(questionId); }
-function bankWrongCount(bank) { return bank.questions.filter((question) => isWrongbookQuestion(question.id)).length; }
+function bankWrongCount(bank) { return bankAllQuestions(bank).filter((question) => isWrongbookQuestion(question.id)).length; }
+function bankFavoriteCount(bank) { return bankAllQuestions(bank).filter((question) => favoriteSet.has(question.id)).length; }
 function globalWrongCount() { return allQuestions().filter((question) => isWrongbookQuestion(question.id)).length; }
 
+function pruneUnusedSavedRelatedQuestions() {
+  let changed = false;
+  importedBanks.forEach((bank) => {
+    const saved = bank.savedRelatedQuestions || [];
+    const retained = saved.filter((question) => wrongSet.has(question.id) || favoriteSet.has(question.id));
+    if (retained.length !== saved.length) {
+      bank.savedRelatedQuestions = retained;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function purgeBankState(bank) {
-  bank.questions.forEach((question) => {
+  bankAllQuestions(bank).forEach((question) => {
     completedSet.delete(question.id);
     wrongSet.delete(question.id);
     favoriteSet.delete(question.id);
@@ -613,7 +637,8 @@ const MODE_CARDS = [
   { key: 'random-multi', icon: '⌁', title: '乱序多选', description: '随机题目顺序，只练多选题。' },
   { key: 'mock', icon: '▤', title: '模拟练习', description: '自定义单选、多选数量组成一套练习。' },
   { key: 'wrong', icon: '↺', title: '错题练习', description: '练习当前题库中答错或收藏的题目。' },
-  { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出答错或收藏的题目。' }
+  { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出答错或收藏的题目。' },
+  { key: 'favorites', icon: '★', title: '收藏夹', description: '查看并练习当前题库中收藏的题目。' }
 ];
 
 function renderBank(bank) {
@@ -622,6 +647,7 @@ function renderBank(bank) {
   const single = bank.questions.filter((question) => question.type === 'single');
   const multi = bank.questions.filter((question) => question.type === 'multi');
   const wrong = bankWrongCount(bank);
+  const favorites = bankFavoriteCount(bank);
   $('bank-title').textContent = bank.name;
   $('bank-filename').textContent = bank.filename;
   $('bank-total').textContent = bank.questions.length;
@@ -633,9 +659,9 @@ function renderBank(bank) {
   shuffleToggle.onchange = (event) => setShuffleOptionsPreference(event.currentTarget.checked);
 
   $('mode-grid').innerHTML = MODE_CARDS.map((mode) => {
-    const count = mode.key.includes('single') ? single.length : mode.key.includes('multi') ? multi.length : ['wrong', 'wrongbook'].includes(mode.key) ? wrong : bank.questions.length;
-    const disabled = count === 0 && mode.key !== 'wrongbook';
-    return `<button class="mode-card${mode.key === 'wrongbook' ? ' wrongbook-card' : ''}" type="button" data-mode="${mode.key}" ${disabled ? 'disabled' : ''}>
+    const count = mode.key.includes('single') ? single.length : mode.key.includes('multi') ? multi.length : ['wrong', 'wrongbook'].includes(mode.key) ? wrong : mode.key === 'favorites' ? favorites : bank.questions.length;
+    const disabled = count === 0 && !['wrongbook', 'favorites'].includes(mode.key);
+    return `<button class="mode-card${['wrongbook', 'favorites'].includes(mode.key) ? ' wrongbook-card' : ''}" type="button" data-mode="${mode.key}" ${disabled ? 'disabled' : ''}>
       <span class="mode-icon">${mode.icon}</span><span class="mode-copy"><strong>${mode.title}</strong><small>${mode.description}</small></span><span class="mode-count">${count} 题</span><span class="mode-arrow">→</span>
     </button>`;
   }).join('');
@@ -643,6 +669,7 @@ function renderBank(bank) {
     const mode = button.dataset.mode;
     if (mode === 'mock') navigate(`#/bank/${encodeURIComponent(bank.id)}/mock`);
     else if (mode === 'wrongbook') navigate(`#/bank/${encodeURIComponent(bank.id)}/wrongbook`);
+    else if (mode === 'favorites') navigate(`#/bank/${encodeURIComponent(bank.id)}/favorites`);
     else if (OPTION_ORDER_MODES.has(mode)) {
       const optionOrder = state.shufflePracticeOptions ? 'shuffle' : 'fixed';
       navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/${mode}/${optionOrder}`);
@@ -652,35 +679,45 @@ function renderBank(bank) {
 
 }
 
-function renderWrongbook(bank = null) {
+function renderWrongbook(bank = null, collectionKind = 'wrongbook') {
+  const favoritesOnly = collectionKind === 'favorites';
   state.wrongbookBankId = bank?.id || 'all';
   showView('view-wrongbook');
-  const source = bank ? bank.questions : allQuestions();
-  const questions = source.filter((question) => isWrongbookQuestion(question.id));
-  $('wrongbook-title').textContent = bank ? `${bank.name} · 错题集` : '全部错题集';
-  $('wrongbook-subtitle').textContent = bank ? '本题库答错或收藏的题目会持续保留，直到你手动移出。' : '所有题库中答错或收藏的题目都会集中保存在这里。';
+  const source = bank ? bankAllQuestions(bank) : allQuestions();
+  const questions = source.filter((question) => favoritesOnly ? favoriteSet.has(question.id) : isWrongbookQuestion(question.id));
+  $('wrongbook-eyebrow').textContent = favoritesOnly ? 'FAVORITE QUESTION COLLECTION' : 'WRONG QUESTION COLLECTION';
+  $('wrongbook-title').textContent = bank ? `${bank.name} · ${favoritesOnly ? '收藏夹' : '错题集'}` : favoritesOnly ? '全部收藏夹' : '全部错题集';
+  $('wrongbook-subtitle').textContent = favoritesOnly
+    ? '收藏的题目集中保存在这里，可随时重新练习。'
+    : bank ? '本题库答错或收藏的题目会持续保留，直到你手动移出。' : '所有题库中答错或收藏的题目都会集中保存在这里。';
   $('wrongbook-count').textContent = questions.length;
   $('wrongbook-back').onclick = () => navigate(bank ? `#/bank/${encodeURIComponent(bank.id)}` : '#/banks');
   $('wrongbook-practice').disabled = questions.length === 0;
   $('wrongbook-clear').disabled = questions.length === 0;
+  $('wrongbook-practice').innerHTML = `${favoritesOnly ? '开始收藏练习' : '开始错题练习'} <span>→</span>`;
+  $('wrongbook-clear').textContent = favoritesOnly ? '清空收藏夹' : '清空错题集';
   $('wrongbook-practice').onclick = () => {
     if (!questions.length) return;
-    navigate(bank ? `#/bank/${encodeURIComponent(bank.id)}/practice/wrong` : '#/practice/all/wrong');
+    const mode = favoritesOnly ? 'favorite' : 'wrong';
+    navigate(bank ? `#/bank/${encodeURIComponent(bank.id)}/practice/${mode}` : `#/practice/all/${mode}`);
   };
   $('wrongbook-clear').onclick = () => {
-    if (!questions.length || !window.confirm(`确定清空${bank ? `“${bank.name}”的` : '全部'}错题集吗？`)) return;
+    const collectionLabel = favoritesOnly ? '收藏夹' : '错题集';
+    if (!questions.length || !window.confirm(`确定清空${bank ? `“${bank.name}”的` : '全部'}${collectionLabel}吗？`)) return;
     questions.forEach((question) => {
-      wrongSet.delete(question.id);
       favoriteSet.delete(question.id);
+      if (!favoritesOnly) wrongSet.delete(question.id);
     });
+    const banksChanged = pruneUnusedSavedRelatedQuestions();
+    if (banksChanged) saveBanks();
     saveProgress();
     updateGlobalCounts();
-    renderWrongbook(bank);
+    renderWrongbook(bank, collectionKind);
   };
 
   const list = $('wrongbook-list');
   if (!questions.length) {
-    list.innerHTML = '<div class="wrongbook-empty"><span>✓</span><h2>暂无题目</h2><p>答错或收藏的题目会自动收集到这里。</p></div>';
+    list.innerHTML = `<div class="wrongbook-empty"><span>${favoritesOnly ? '☆' : '✓'}</span><h2>${favoritesOnly ? '暂无收藏' : '暂无题目'}</h2><p>${favoritesOnly ? '在答题页或相关题目上点击收藏即可加入。' : '答错或收藏的题目会自动收集到这里。'}</p></div>`;
     return;
   }
   list.innerHTML = questions.map((question, index) => {
@@ -689,17 +726,20 @@ function renderWrongbook(bank = null) {
     const bankName = getBank(question.bankId)?.name || question.bankName || '题库';
     const reasonBadges = `${wrongSet.has(question.id) ? '<span class="wrongbook-reason mistake">答错</span>' : ''}${favoriteSet.has(question.id) ? '<span class="wrongbook-reason favorite">★ 已收藏</span>' : ''}`;
     return `<article class="wrongbook-item">
-      <div class="wrongbook-item-top"><span class="wrongbook-index">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(bankName)}</span><span>${question.type === 'multi' ? '多选题' : '单选题'}</span>${reasonBadges}<button type="button" data-remove-wrong="${escapeHtml(question.id)}">移出错题集</button></div>
+      <div class="wrongbook-item-top"><span class="wrongbook-index">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(bankName)}</span><span>${question.type === 'multi' ? '多选题' : '单选题'}</span>${reasonBadges}<button type="button" data-remove-collection="${escapeHtml(question.id)}">${favoritesOnly ? '取消收藏' : '移出错题集'}</button></div>
       <h2>${escapeHtml(question.prompt)}</h2>
       <div class="wrongbook-answer"><strong>正确答案：${answers.join('、')}</strong>${answerOptions.length ? `<p>${answerOptions.map(([key, text]) => `${key}. ${escapeHtml(text)}`).join('　')}</p>` : ''}<small>${escapeHtml(question.explanation || '本题未生成解析。')}</small></div>
     </article>`;
   }).join('');
-  list.querySelectorAll('[data-remove-wrong]').forEach((button) => button.addEventListener('click', () => {
-    wrongSet.delete(button.dataset.removeWrong);
-    favoriteSet.delete(button.dataset.removeWrong);
+  list.querySelectorAll('[data-remove-collection]').forEach((button) => button.addEventListener('click', () => {
+    const questionId = button.dataset.removeCollection;
+    favoriteSet.delete(questionId);
+    if (!favoritesOnly) wrongSet.delete(questionId);
+    const banksChanged = pruneUnusedSavedRelatedQuestions();
+    if (banksChanged) saveBanks();
     saveProgress();
     updateGlobalCounts();
-    renderWrongbook(bank);
+    renderWrongbook(bank, collectionKind);
   }));
 }
 
@@ -742,8 +782,10 @@ function buildSession(spec, routeKey = '') {
   const config = MODE_CONFIG[spec.mode];
   const shouldShuffleOptions = typeof spec.shuffleOptions === 'boolean' ? spec.shuffleOptions : config.shuffleOptions;
   let bank = spec.bankId === 'all' ? null : getBank(spec.bankId);
-  let source = bank ? [...bank.questions] : allQuestions();
+  const collectionMode = ['wrong', 'favorite'].includes(spec.mode);
+  let source = bank ? [...(collectionMode ? bankAllQuestions(bank) : bank.questions)] : allQuestions();
   if (spec.mode === 'wrong') source = source.filter((question) => isWrongbookQuestion(question.id));
+  else if (spec.mode === 'favorite') source = source.filter((question) => favoriteSet.has(question.id));
   else if (spec.mode === 'mock') {
     const singles = shuffle(source.filter((question) => question.type === 'single')).slice(0, spec.singleCount);
     const multis = shuffle(source.filter((question) => question.type === 'multi')).slice(0, spec.multiCount);
@@ -791,6 +833,7 @@ function beginSession(spec, routeKey = '') {
   if (!state.session.questions.length) {
     window.alert('当前模式没有可练习的题目。');
     if (spec.mode === 'wrong') navigate(spec.bankId === 'all' ? '#/wrongbook' : `#/bank/${encodeURIComponent(spec.bankId)}/wrongbook`);
+    else if (spec.mode === 'favorite') navigate(spec.bankId === 'all' ? '#/banks' : `#/bank/${encodeURIComponent(spec.bankId)}/favorites`);
     else if (spec.bankId === 'all') navigate('#/banks');
     else navigate(`#/bank/${encodeURIComponent(spec.bankId)}`);
     return;
@@ -817,8 +860,16 @@ function renderQuestionFavorite(question) {
   $('question-favorite-icon').textContent = active ? '★' : '☆';
   $('question-favorite-label').textContent = active ? '已收藏' : '收藏题目';
   button.onclick = () => {
-    if (favoriteSet.has(question.id)) favoriteSet.delete(question.id);
-    else favoriteSet.add(question.id);
+    if (favoriteSet.has(question.id)) {
+      favoriteSet.delete(question.id);
+      if (question.relatedSaved && !wrongSet.has(question.id)) {
+        const bank = getBank(question.bankId);
+        if (bank) {
+          bank.savedRelatedQuestions = (bank.savedRelatedQuestions || []).filter((item) => item.id !== question.id);
+          saveBanks();
+        }
+      }
+    } else favoriteSet.add(question.id);
     saveProgress();
     updateGlobalCounts();
     renderQuestionFavorite(question);
@@ -846,6 +897,11 @@ function renderCurrentQuestion() {
   $('submit-button').disabled = !question.displayOptions.length;
   $('next-button').hidden = !response.submitted;
   $('next-button').innerHTML = session.current === session.questions.length - 1 ? '查看结果 <span>→</span>' : '下一题 <span>→</span>';
+  const jumpInput = $('question-jump-input');
+  jumpInput.min = '1';
+  jumpInput.max = String(session.questions.length);
+  jumpInput.value = String(session.current + 1);
+  jumpInput.setCustomValidity('');
   const feedback = $('answer-feedback');
   feedback.hidden = !response.submitted;
   feedback.className = `answer-feedback${response.submitted && response.hasAnswer && !response.correct ? ' incorrect' : ''}`;
@@ -858,6 +914,7 @@ function renderCurrentQuestion() {
   updateOptionState();
   $('practice-back').onclick = () => {
     if (session.mode === 'wrong') navigate(session.bankId === 'all' ? '#/wrongbook' : `#/bank/${encodeURIComponent(session.bankId)}/wrongbook`);
+    else if (session.mode === 'favorite') navigate(session.bankId === 'all' ? '#/banks' : `#/bank/${encodeURIComponent(session.bankId)}/favorites`);
     else navigate(session.bankId === 'all' ? '#/banks' : `#/bank/${encodeURIComponent(session.bankId)}`);
   };
 }
@@ -924,6 +981,78 @@ function findLocalRelatedQuestions(question, limit = 3) {
     }));
 }
 
+function stableRelatedQuestionSourceId(item) {
+  const source = JSON.stringify({
+    prompt: item.prompt,
+    options: (item.options || []).map((option) => [option.key, option.text]),
+    answer: item.answer || []
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `saved-related-${(hash >>> 0).toString(16).padStart(8, '0')}-${source.length}`;
+}
+
+function findStoredRelatedQuestion(item, bankId = '') {
+  if (item.source === 'bank') return allQuestions().find((question) => question.id === item.id) || null;
+  const sourceId = item.storageSourceId || stableRelatedQuestionSourceId(item);
+  const banks = bankId ? [getBank(bankId)].filter(Boolean) : allBanks();
+  return banks.flatMap((bank) => bank.savedRelatedQuestions || [])
+    .find((question) => String(question.sourceId) === sourceId) || null;
+}
+
+function ensureRelatedQuestionStored(item, sourceQuestion) {
+  if (item.source === 'bank') return findStoredRelatedQuestion(item);
+  const bank = getBank(sourceQuestion.bankId);
+  if (!bank) return null;
+  const sourceId = item.storageSourceId || stableRelatedQuestionSourceId(item);
+  let stored = findStoredRelatedQuestion({ ...item, storageSourceId: sourceId }, bank.id);
+  if (!stored) {
+    stored = normaliseQuestion({
+      id: sourceId,
+      sourceId,
+      prompt: item.prompt,
+      options: item.options.map((option) => [option.key, option.text]),
+      answer: item.answer,
+      type: item.type,
+      explanation: item.explanation || '',
+      category: '相关题目',
+      tags: ['相关题目', '收藏'],
+      relatedSaved: true
+    }, bank.id, bank.name, bank.questions.length + (bank.savedRelatedQuestions || []).length);
+    bank.savedRelatedQuestions = [...(bank.savedRelatedQuestions || []), stored];
+    saveBanks();
+  }
+  item.storageSourceId = sourceId;
+  item.savedQuestionId = stored.id;
+  return stored;
+}
+
+function toggleRelatedQuestionFavorite(item, sourceQuestion) {
+  let stored = findStoredRelatedQuestion(item, sourceQuestion.bankId);
+  let questionId = item.source === 'bank' ? item.id : stored?.id;
+  if (questionId && favoriteSet.has(questionId)) {
+    favoriteSet.delete(questionId);
+    if (item.source === 'web' && !wrongSet.has(questionId)) {
+      const bank = getBank(stored.bankId);
+      if (bank) {
+        bank.savedRelatedQuestions = (bank.savedRelatedQuestions || []).filter((question) => question.id !== questionId);
+        saveBanks();
+      }
+      item.savedQuestionId = '';
+    }
+  } else {
+    stored = ensureRelatedQuestionStored(item, sourceQuestion);
+    questionId = stored?.id || '';
+    if (!questionId) return;
+    favoriteSet.add(questionId);
+  }
+  saveProgress();
+  updateGlobalCounts();
+}
+
 function normaliseExternalRelatedQuestion(raw, index) {
   if (!raw || typeof raw !== 'object') return null;
   const options = (Array.isArray(raw.options) ? raw.options : []).map((option, optionIndex) => ({
@@ -935,7 +1064,7 @@ function normaliseExternalRelatedQuestion(raw, index) {
     .filter((letter) => optionKeys.has(letter)).sort();
   const prompt = String(raw.prompt || '').trim();
   if (!prompt || options.length < 2 || !answer.length) return null;
-  return {
+  const question = {
     id: String(raw.id || `web-related-${index}`),
     source: 'web',
     bankName: '联网拓展',
@@ -946,6 +1075,8 @@ function normaliseExternalRelatedQuestion(raw, index) {
     explanation: String(raw.explanation || '').trim(),
     sourceIndexes: (Array.isArray(raw.sourceIndexes) ? raw.sourceIndexes : []).map(Number).filter(Number.isInteger)
   };
+  question.storageSourceId = stableRelatedQuestionSourceId(question);
+  return question;
 }
 
 function normaliseRelatedSource(raw) {
@@ -968,6 +1099,9 @@ function relatedQuestionMarkup(item, response) {
   const submitted = Boolean(response.relatedSubmitted[item.id]);
   const correct = submitted && sameAnswers([...selected].sort(), [...item.answer].sort());
   const origin = item.source === 'web' ? '联网拓展' : item.bankName;
+  const stored = findStoredRelatedQuestion(item);
+  const favoriteQuestionId = item.source === 'bank' ? item.id : stored?.id || item.savedQuestionId || '';
+  const isFavorite = Boolean(favoriteQuestionId && favoriteSet.has(favoriteQuestionId));
   const options = item.options.map((option) => {
     const isSelected = selected.includes(option.key);
     const isCorrect = submitted && item.answer.includes(option.key);
@@ -983,7 +1117,7 @@ function relatedQuestionMarkup(item, response) {
     <span>${escapeHtml(explanation)}</span>
   </div>` : '';
   return `<article class="related-card" data-related-card="${escapeHtml(item.id)}">
-    <div class="related-card-top"><span class="related-origin">${escapeHtml(origin)}</span><span class="related-type">${item.type === 'multi' ? '多选题' : '单选题'}</span></div>
+    <div class="related-card-top"><span class="related-origin">${escapeHtml(origin)}</span><div class="related-card-tools"><button class="related-favorite${isFavorite ? ' active' : ''}" type="button" data-related-favorite="${escapeHtml(item.id)}" aria-pressed="${isFavorite}">${isFavorite ? '★ 已收藏' : '☆ 收藏'}</button><span class="related-type">${item.type === 'multi' ? '多选题' : '单选题'}</span></div></div>
     <h3>${escapeHtml(item.prompt)}</h3>
     <div class="related-options">${options}</div>
     ${submitted ? '' : `<div class="related-card-actions"><span class="related-selection-hint">${item.type === 'multi' ? '可选择多项' : '请选择 1 项'}</span><button class="secondary-button" type="button" data-related-submit="${escapeHtml(item.id)}" ${selected.length ? '' : 'disabled'}>提交答案</button></div>`}
@@ -1284,14 +1418,20 @@ async function generateRelatedQuestions() {
 }
 
 function handleRelatedResultsClick(event) {
-  const action = event.target.closest('[data-related-option],[data-related-submit]');
+  const action = event.target.closest('[data-related-option],[data-related-submit],[data-related-favorite]');
   const session = state.session;
   if (!action || !session) return;
   const question = session.questions[session.current];
   const response = session.responses[session.current];
-  const relatedId = String(action.dataset.relatedId || action.dataset.relatedSubmit || '');
+  const relatedId = String(action.dataset.relatedId || action.dataset.relatedSubmit || action.dataset.relatedFavorite || '');
   const relatedQuestion = relatedQuestionById(response, relatedId);
-  if (!relatedQuestion || response.relatedSubmitted[relatedId]) return;
+  if (!relatedQuestion) return;
+  if (action.dataset.relatedFavorite) {
+    toggleRelatedQuestionFavorite(relatedQuestion, question);
+    renderRelatedPractice(question, response);
+    return;
+  }
+  if (response.relatedSubmitted[relatedId]) return;
   if (action.dataset.relatedOption) {
     const key = String(action.dataset.relatedOption);
     const selected = Array.isArray(response.relatedSelections[relatedId]) ? response.relatedSelections[relatedId] : [];
@@ -1302,6 +1442,12 @@ function handleRelatedResultsClick(event) {
     const selected = response.relatedSelections[relatedId] || [];
     if (!selected.length) return;
     response.relatedSubmitted[relatedId] = true;
+    const correct = sameAnswers([...selected].sort(), [...relatedQuestion.answer].sort());
+    if (!correct && relatedQuestion.source === 'bank') {
+      wrongSet.add(relatedQuestion.id);
+      saveProgress();
+      updateGlobalCounts();
+    }
   }
   renderRelatedPractice(question, response);
 }
@@ -1511,6 +1657,26 @@ async function generateResultAnalyses() {
   }
 }
 
+function jumpToQuestion(event) {
+  event.preventDefault();
+  const session = state.session;
+  const input = $('question-jump-input');
+  if (!session || !input) return;
+  const targetNumber = Number(input.value);
+  if (!input.value.trim() || !Number.isInteger(targetNumber) || targetNumber < 1 || targetNumber > session.questions.length) {
+    input.setCustomValidity(`请输入 1 到 ${session.questions.length} 之间的整数题号`);
+    input.reportValidity();
+    return;
+  }
+  input.setCustomValidity('');
+  clearAutoNextTimer(session);
+  session.current = targetNumber - 1;
+  $('tutor-input').value = '';
+  renderCurrentQuestion();
+  savePracticeBookmark(session);
+  resetQuestionCardOnMobile();
+}
+
 function skipResultAnalyses() {
   if (!state.session || state.session.aiAnalysisLoading) return;
   state.session.aiAnalysisError = '';
@@ -1525,6 +1691,7 @@ function renderRoute() {
     const bank = getBank(parts[1]);
     if (!bank) { navigate('#/banks'); return; }
     if (parts[2] === 'wrongbook') { renderWrongbook(bank); return; }
+    if (parts[2] === 'favorites') { renderWrongbook(bank, 'favorites'); return; }
     if (parts[2] === 'mock') { renderMock(bank); return; }
     if (parts[2] === 'practice' && MODE_CONFIG[parts[3]]) {
       const routeKey = location.hash;
@@ -1544,9 +1711,9 @@ function renderRoute() {
     return;
   }
   if (parts[0] === 'wrongbook') { renderWrongbook(); return; }
-  if (parts[0] === 'practice' && parts[1] === 'all' && parts[2] === 'wrong') {
+  if (parts[0] === 'practice' && parts[1] === 'all' && ['wrong', 'favorite'].includes(parts[2])) {
     const routeKey = location.hash;
-    if (!state.session || state.session.routeKey !== routeKey) beginSession({ bankId: 'all', mode: 'wrong' }, routeKey); else renderCurrentQuestion();
+    if (!state.session || state.session.routeKey !== routeKey) beginSession({ bankId: 'all', mode: parts[2] }, routeKey); else renderCurrentQuestion();
     return;
   }
   navigate('#/banks');
@@ -1653,6 +1820,9 @@ $('related-generate').addEventListener('click', generateRelatedQuestions);
 $('related-results').addEventListener('click', handleRelatedResultsClick);
 $('next-button').addEventListener('click', nextQuestion);
 $('previous-button').addEventListener('click', previousQuestion);
+$('question-jump-form').addEventListener('submit', jumpToQuestion);
+$('question-jump-input').addEventListener('input', (event) => event.currentTarget.setCustomValidity(''));
+$('question-jump-input').addEventListener('focus', (event) => event.currentTarget.select());
 $('result-ai-generate').addEventListener('click', generateResultAnalyses);
 $('result-ai-skip').addEventListener('click', skipResultAnalyses);
 window.addEventListener('hashchange', renderRoute);
