@@ -254,14 +254,14 @@ button:disabled { cursor:not-allowed; }
 .option-missing { padding:23px; border:1px dashed #e0aaa1; border-radius:11px; color:var(--red); background:#fff8f6; font-size:14px; text-align:center; }
 .answer-feedback { margin-top:20px; padding:15px 17px; border-radius:11px; color:#39715d; background:#e7f6ed; font-size:14px; line-height:1.8; }
 .answer-feedback.incorrect { color:#96584d; background:#fff0eb; }
-.question-ai-panel { margin-top:14px; padding:16px 17px; border:1px solid #c5e5de; border-radius:13px; background:#f3fbf8; }
-.question-ai-prompt { display:flex; align-items:center; justify-content:flex-end; gap:20px; }
+.question-ai-panel { display:flex; justify-content:flex-end; margin-top:12px; }
+.question-ai-prompt { display:flex; align-items:center; justify-content:flex-end; }
 .question-ai-prompt span,.question-ai-prompt strong,.question-ai-prompt small { display:block; }
 .question-ai-prompt span { margin-bottom:5px; color:var(--teal); font:10px 'DM Mono',monospace; letter-spacing:.12em; text-transform:uppercase; }
 .question-ai-prompt strong { font-size:15px; }
 .question-ai-prompt small { margin-top:4px; color:var(--muted); font-size:12px; }
-.question-ai-actions { display:flex; flex:0 0 auto; gap:8px; }
-.question-ai-actions button { padding:10px 13px; font-size:12px; }
+.question-ai-actions { display:flex; flex:0 0 auto; gap:9px; }
+.question-ai-actions button { min-height:42px; padding:10px 15px; font-size:13px; }
 .detail-shell { width:min(960px,100%); margin:0 auto; }
 .detail-navigation { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
 .compact-detail-button { padding:9px 13px; font-size:12px; }
@@ -465,8 +465,7 @@ button:disabled { cursor:not-allowed; }
   .question-jump-form { width:100%; justify-content:flex-end; padding:4px 5px 4px 9px; }
   .question-jump-form input { width:62px; min-height:34px; }
   .question-jump-form button { min-height:34px; }
-  .question-ai-prompt { display:block; }
-  .question-ai-actions { margin-top:0; }
+  .question-ai-panel,.question-ai-prompt,.question-ai-actions { width:100%; }
   .question-ai-actions button { flex:1; }
   .tutor-followup-head { display:block; }
   .tutor-followup-head small { display:block; margin-top:3px; }
