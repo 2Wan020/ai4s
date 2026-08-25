@@ -83,6 +83,7 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
             }],
             "completed": [question_id] if completed else [],
             "wrong": [],
+            "favorites": [question_id],
             "preferences": {"autoNextCorrect": True, "shuffleOptions": True},
             "lastPractice": {
                 "routeKey": f"#/bank/{bank_id}/practice/ordered-single",

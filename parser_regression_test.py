@@ -125,6 +125,59 @@ class OrdinaryImportParserRegressionTests(unittest.TestCase):
                 self.assertEqual(question["options"], [["A", "10"], ["B", "11"], ["C", "12"], ["D", "15"]])
                 self.assertEqual(question["answer"], ["D"])
 
+    def test_missing_b_key_glued_to_a_is_recovered_from_later_keys(self):
+        question, warnings = self.parse_one([
+            "69. 共建“一带一路”，秉持（C）原则。",
+            "A.全面开放B.互利共赢",
+            "C.共商共建共享",
+            "D.引进来和走出去并重",
+        ])
+        self.assertEqual(question["prompt"], "共建“一带一路”，秉持（ ）原则。")
+        self.assertEqual(question["options"], [
+            ["A", "全面开放"],
+            ["B", "互利共赢"],
+            ["C", "共商共建共享"],
+            ["D", "引进来和走出去并重"],
+        ])
+        self.assertEqual(question["answer"], ["C"])
+        self.assertTrue(any("B 选项自动拆开" in warning for warning in warnings))
+
+    def test_bare_a_option_at_end_of_stem_and_bare_following_options_are_recovered(self):
+        question, warnings = self.parse_one([
+            "54. 要坚持把（C）作为党的奋斗目标。 A促进人的全面发展",
+            "B促进人的生活水平提高",
+            "C人民对美好生活的向往",
+            "D促进人的自由发展",
+        ])
+        self.assertEqual(question["prompt"], "要坚持把（ ）作为党的奋斗目标。")
+        self.assertEqual(question["options"], [
+            ["A", "促进人的全面发展"],
+            ["B", "促进人的生活水平提高"],
+            ["C", "人民对美好生活的向往"],
+            ["D", "促进人的自由发展"],
+        ])
+        self.assertEqual(question["answer"], ["C"])
+        self.assertEqual(question["type"], "single")
+
+    def test_existing_b_option_prevents_false_embedded_b_split(self):
+        question, _ = self.parse_one([
+            "70. 下列说法正确的是（A）。",
+            "A. 维生素B.群属于水溶性维生素",
+            "B. 维生素C属于水溶性维生素",
+            "C. 以上均正确",
+        ])
+        self.assertEqual(question["options"][0], ["A", "维生素B.群属于水溶性维生素"])
+        self.assertEqual([key for key, _ in question["options"]], list("ABC"))
+
+    def test_a_share_market_phrase_is_not_treated_as_an_option(self):
+        question, _ = self.parse_one([
+            "71. 下列关于A股市场的说法正确的是（A）。",
+            "A. 正确",
+            "B. 错误",
+        ])
+        self.assertEqual(question["prompt"], "下列关于A股市场的说法正确的是（ ）。")
+        self.assertEqual(question["options"], [["A", "正确"], ["B", "错误"]])
+
     def test_vitamin_d3_is_not_treated_as_d_option(self):
         question, _ = self.parse_one([
             "27. 下列物质正确的是（C）。",

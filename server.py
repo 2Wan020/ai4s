@@ -73,6 +73,11 @@ OPTION_RE = re.compile(r"^\s*[\(（\[【]?\s*([A-Ha-h])(?:\s*[\)）\]】\.．、
 ATTACHED_NUMERIC_OPTION_RE = re.compile(
     r"^\s*([A-Ha-h])(?=[+-]?(?:\d|[零一二三四五六七八九十百千万两]))(.+)$"
 )
+ATTACHED_TEXT_OPTION_RE = re.compile(r"^\s*([A-Ha-h])(?=[\u3400-\u9fff])(.+)$")
+BARE_FIRST_OPTION_SUFFIX_RE = re.compile(
+    r"^(.*[。！？!?；;：:])\s+A\s*([\u3400-\u9fff].+)$",
+    re.IGNORECASE,
+)
 ANSWER_RE = re.compile(r"^\s*(?:答案|正确答案|参考答案|answer)\s*[:：]?\s*(.*)$", re.IGNORECASE)
 ANSWER_SECTION_RE = re.compile(r"^\s*(?:答案|参考答案|答案汇总|答案表|正确答案汇总|标准答案)\s*[:：]?\s*$", re.IGNORECASE)
 ANSWER_KEY_PAIR_RE = re.compile(
@@ -225,6 +230,50 @@ def split_merged_option_payload(start_key: str, value: str) -> list[list[str]]:
     return options
 
 
+def repair_structural_option_boundaries(raw_options: list[list[str]]) -> tuple[list[list[str]], list[tuple[str, str]]]:
+    """Split a strong option marker only when the surrounding keys prove it is missing.
+
+    For example, ``A. 全面开放B.互利共赢`` followed by C and D is repaired
+    because B is absent while a later key exists. Requiring that key gap keeps
+    ordinary text such as ``维生素B.群`` intact when a real B option is already
+    present.
+    """
+    repaired: list[list[str]] = []
+    recovered_pairs: list[tuple[str, str]] = []
+    normalised = [[str(key).upper(), clean_text(value)] for key, value in raw_options]
+
+    for index, (start_key, value) in enumerate(normalised):
+        current_key = start_key
+        remainder = value
+        future_keys = {key for key, _ in normalised[index + 1:]}
+        while current_key in "ABCDEFG" and current_key < "H":
+            next_key = chr(ord(current_key) + 1)
+            # A key already present later is not missing and must not be
+            # reconstructed from ordinary prose inside the preceding option.
+            if next_key in future_keys or any(key == next_key for key, _ in repaired):
+                break
+            if not any(key > next_key for key in future_keys):
+                break
+            marker = re.compile(
+                rf"(?:[\(（\[【]\s*{next_key}\s*[\)）\]】]\s*|"
+                rf"{next_key}\s*[\.．、:：\-—]\s*)",
+                re.IGNORECASE,
+            ).search(remainder)
+            if not marker:
+                break
+            current_text = clean_text(remainder[:marker.start()])
+            next_text = clean_text(remainder[marker.end():])
+            if not current_text or not next_text or not meaningful_text(current_text) or not meaningful_text(next_text):
+                break
+            repaired.append([current_key, current_text])
+            recovered_pairs.append((current_key, next_key))
+            current_key = next_key
+            remainder = next_text
+        repaired.append([current_key, remainder])
+
+    return repaired, recovered_pairs
+
+
 def parse_answer_payload(value: str) -> list[str]:
     """Read only the leading answer token, avoiding letters in later prose."""
     text = re.sub(r"^\s*(?:选项\s*)?(?:是|为)?\s*", "", clean_text(value))
@@ -354,6 +403,15 @@ def expand_line(value: str) -> list[str]:
     # single-choice versus multiple-choice.
     if ANSWER_RE.match(line):
         return [line]
+    # Some Word extractors lose the delimiter after the first option and join
+    # it to a numbered stem: ``1. 题干。 A选项``. Split only this strongly
+    # contextual shape; an ordinary phrase such as ``A股市场`` is untouched.
+    question_parts = numbered_question_parts(line)
+    if question_parts:
+        number, prompt = question_parts
+        attached_first = BARE_FIRST_OPTION_SUFFIX_RE.match(prompt)
+        if attached_first:
+            return [f"{number}. {clean_text(attached_first.group(1))}", f"A. {clean_text(attached_first.group(2))}"]
     if OPTION_RE.match(line) and len(OPTION_TOKEN_RE.findall(line)) <= 1:
         return [line]
     pieces: list[str] = []
@@ -880,6 +938,25 @@ def parse_docx_questions(lines: list[str]) -> tuple[list[dict], list[str]]:
                     raw_options = raw_options[1:]
                     warnings.append(f"第 {current['number']} 题已将误切为选项 {first_key} 的文字恢复到题干")
 
+        # Recover a delimiter-less first option that was appended to the end
+        # of the stem. Existing B/C/D keys provide the structural evidence;
+        # without them, an ordinary sentence containing ``A股`` is left alone.
+        option_keys = {key for key, _ in raw_options}
+        if "A" not in option_keys and "B" in option_keys and any(key > "B" for key in option_keys):
+            attached_first = BARE_FIRST_OPTION_SUFFIX_RE.match(prompt)
+            if attached_first:
+                option_text = clean_text(attached_first.group(2))
+                if meaningful_text(option_text):
+                    prompt = clean_text(attached_first.group(1))
+                    raw_options.insert(0, ["A", option_text])
+                    warnings.append(f"第 {current['number']} 题已将题干末尾粘连的 A 选项自动拆开")
+
+        raw_options, recovered_boundaries = repair_structural_option_boundaries(raw_options)
+        for previous_key, recovered_key in recovered_boundaries:
+            warnings.append(
+                f"第 {current['number']} 题已将粘连在选项 {previous_key} 末尾的 {recovered_key} 选项自动拆开"
+            )
+
         prompt, prompt_answers = extract_prompt_answers(prompt)
         prompt_answers = list(dict.fromkeys([*recovered_answers, *prompt_answers]))
         if is_placeholder_prompt(prompt):
@@ -1035,6 +1112,10 @@ def parse_docx_questions(lines: list[str]) -> tuple[list[dict], list[str]]:
                 )
                 if attached_match and attached_match.group(1).upper() == expected_key:
                     option_match = attached_match
+                if not option_match:
+                    attached_text_match = ATTACHED_TEXT_OPTION_RE.match(line)
+                    if attached_text_match and attached_text_match.group(1).upper() == expected_key:
+                        option_match = attached_text_match
             if option_match:
                 option_key = option_match.group(1).upper()
                 split_options = split_merged_option_payload(option_key, option_match.group(2))
@@ -2151,13 +2232,14 @@ def validate_profile_state(raw_state) -> dict:
     banks = raw_state.get("banks", [])
     completed = raw_state.get("completed", [])
     wrong = raw_state.get("wrong", [])
+    favorites = raw_state.get("favorites", [])
     preferences = raw_state.get("preferences", {})
     last_practice = raw_state.get("lastPractice")
     if not isinstance(banks, list) or len(banks) > MAX_PROFILE_BANKS:
         raise ValueError(f"题库数量不能超过 {MAX_PROFILE_BANKS} 个")
-    if not isinstance(completed, list) or not isinstance(wrong, list):
+    if not isinstance(completed, list) or not isinstance(wrong, list) or not isinstance(favorites, list):
         raise ValueError("刷题进度格式不正确")
-    if len(completed) > MAX_PROFILE_QUESTIONS or len(wrong) > MAX_PROFILE_QUESTIONS:
+    if len(completed) > MAX_PROFILE_QUESTIONS or len(wrong) > MAX_PROFILE_QUESTIONS or len(favorites) > MAX_PROFILE_QUESTIONS:
         raise ValueError("刷题进度条目过多")
     if not isinstance(preferences, dict):
         raise ValueError("偏好设置格式不正确")
@@ -2205,6 +2287,7 @@ def validate_profile_state(raw_state) -> dict:
         "banks": banks,
         "completed": unique_strings(completed),
         "wrong": unique_strings(wrong),
+        "favorites": unique_strings(favorites),
         "preferences": {
             "autoNextCorrect": bool(preferences.get("autoNextCorrect", False)),
             "shuffleOptions": bool(preferences.get("shuffleOptions", False)),

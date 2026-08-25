@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=20" />
+    <link rel="stylesheet" href="styles.css?v=21" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -103,9 +103,9 @@ C. 选项三
           <div>
             <p class="eyebrow">WRONG QUESTION COLLECTION</p>
             <h1 id="wrongbook-title">错题集</h1>
-            <p id="wrongbook-subtitle">答错的题目会自动保存在这里。</p>
+            <p id="wrongbook-subtitle">答错或收藏的题目会自动保存在这里。</p>
           </div>
-          <div class="wrongbook-head-count"><strong id="wrongbook-count">0</strong><span>道错题</span></div>
+          <div class="wrongbook-head-count"><strong id="wrongbook-count">0</strong><span>道题目</span></div>
         </div>
         <div class="wrongbook-actions">
           <button class="primary-button" type="button" id="wrongbook-practice">开始错题练习 <span>→</span></button>
@@ -139,7 +139,13 @@ C. 选项三
       <section class="view practice-view" id="view-practice" hidden>
         <div class="practice-shell">
           <div class="practice-topbar">
-            <button class="back-button" type="button" id="practice-back">← 退出练习</button>
+            <div class="practice-topbar-actions">
+              <button class="back-button" type="button" id="practice-back">← 退出练习</button>
+              <button class="question-favorite-button" type="button" id="question-favorite" aria-pressed="false" aria-label="收藏当前题目">
+                <span class="question-favorite-icon" id="question-favorite-icon" aria-hidden="true">☆</span>
+                <span id="question-favorite-label">收藏题目</span>
+              </button>
+            </div>
             <div class="practice-identity"><span id="practice-bank">题库</span><strong id="practice-mode">顺序单选</strong></div>
             <span class="practice-counter" id="practice-count">1 / 1</span>
           </div>
@@ -226,6 +232,6 @@ C. 选项三
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=24"></script>
+    <script src="app.js?v=26"></script>
   </body>
 </html>

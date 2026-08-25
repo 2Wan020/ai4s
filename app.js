@@ -2,10 +2,12 @@ const API_BASE = location.pathname.startsWith('/quiz') ? '/quiz' : '';
 const BANK_STORAGE_KEY = 'tudou-question-banks-v2';
 const COMPLETED_KEY = 'tudou-completed-v2';
 const WRONG_KEY = 'tudou-wrong-v2';
+const FAVORITE_KEY = 'tudou-favorites-v1';
 const AUTO_NEXT_CORRECT_KEY = 'tudou-auto-next-correct-v1';
 const SHUFFLE_OPTIONS_KEY = 'tudou-shuffle-options-v1';
 const LAST_PRACTICE_KEY = 'tudou-last-practice-v1';
 const CLOUD_DIRTY_KEY = 'tudou-cloud-dirty-v1';
+const BANK_NORMALISATION_VERSION = 3;
 const AUTO_NEXT_DELAY_MS = 500;
 const CLOUD_SYNC_DELAY_MS = 350;
 const LETTERS = 'ABCDEFGH';
@@ -172,17 +174,69 @@ function splitMergedStoredOption(startKey, value) {
   return result;
 }
 
+function meaningfulStoredText(value) {
+  return /[A-Za-z0-9\u3400-\u9fff]/.test(String(value || ''));
+}
+
+function repairStoredQuestionParts(prompt, rawOptions) {
+  let repairedPrompt = String(prompt || '').replace(/\s+/g, ' ').trim();
+  let options = rawOptions.map(([key, text]) => [
+    String(key || '').toUpperCase(),
+    String(text || '').replace(/\s+/g, ' ').trim()
+  ]);
+  const optionKeys = new Set(options.map(([key]) => key));
+
+  // Historical imports may have stored ``题干。 A选项`` as one prompt while
+  // B/C/D remained separate. The later keys make this a safe structural fix.
+  if (!optionKeys.has('A') && optionKeys.has('B') && [...optionKeys].some((key) => key > 'B')) {
+    const attachedFirst = repairedPrompt.match(/^(.*[。！？!?；;：:])\s+A\s*([\u3400-\u9fff].+)$/i);
+    if (attachedFirst && meaningfulStoredText(attachedFirst[2])) {
+      repairedPrompt = attachedFirst[1].trim();
+      options = [['A', attachedFirst[2].trim()], ...options];
+    }
+  }
+
+  // Repair a missing sequential option only when a later key proves the gap:
+  // A + embedded ``B.`` + C/D becomes A/B/C/D, but prose is not split when
+  // a genuine B option already exists.
+  const repairedOptions = [];
+  options.forEach(([startKey, startText], optionIndex) => {
+    let currentKey = startKey;
+    let remainder = startText;
+    const futureKeys = new Set(options.slice(optionIndex + 1).map(([key]) => key));
+    while (LETTERS.includes(currentKey) && currentKey < 'H') {
+      const nextKey = String.fromCharCode(currentKey.charCodeAt(0) + 1);
+      if (futureKeys.has(nextKey) || repairedOptions.some(([key]) => key === nextKey)) break;
+      if (![...futureKeys].some((key) => key > nextKey)) break;
+      const marker = new RegExp(`(?:[\\(（\\[【]\\s*${nextKey}\\s*[\\)）\\]】]\\s*|${nextKey}\\s*[.．、:：\\-—]\\s*)`, 'i');
+      const match = marker.exec(remainder);
+      if (!match) break;
+      const currentText = remainder.slice(0, match.index).trim();
+      const nextText = remainder.slice(match.index + match[0].length).trim();
+      if (!meaningfulStoredText(currentText) || !meaningfulStoredText(nextText)) break;
+      repairedOptions.push([currentKey, currentText]);
+      currentKey = nextKey;
+      remainder = nextText;
+    }
+    repairedOptions.push([currentKey, remainder]);
+  });
+
+  return { prompt: repairedPrompt, options: repairedOptions };
+}
+
 function normaliseQuestion(question, bankId, bankName, index) {
   const rawId = question.sourceId ?? (String(question.id || '').startsWith(`${bankId}::`) ? String(question.id).slice(bankId.length + 2) : question.id) ?? index;
   const tail = extractTailAnswer(question.prompt || question.title || '');
   const rawAnswers = Array.isArray(question.answer) ? question.answer.join('') : String(question.answer || '');
   const explicitAnswers = [...new Set((rawAnswers.match(/[A-H]/gi) || []).map((letter) => letter.toUpperCase()))];
   const answers = explicitAnswers.length ? explicitAnswers : tail.answers;
-  const seenOptions = new Set();
-  const options = (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => {
+  const rawOptions = (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => {
     if (Array.isArray(option)) return [String(option[0] || LETTERS[optionIndex]).toUpperCase(), String(option[1] || '').trim()];
     return [LETTERS[optionIndex], String(option || '').trim()];
-  }).flatMap(([key, text]) => splitMergedStoredOption(key, text)).filter(([key, text]) => {
+  });
+  const repaired = repairStoredQuestionParts(tail.prompt, rawOptions);
+  const seenOptions = new Set();
+  const options = repaired.options.flatMap(([key, text]) => splitMergedStoredOption(key, text)).filter(([key, text]) => {
     if (!text || seenOptions.has(key)) return false;
     seenOptions.add(key);
     return true;
@@ -194,8 +248,8 @@ function normaliseQuestion(question, bankId, bankName, index) {
     sourceId: rawId,
     bankId,
     bankName,
-    prompt: tail.prompt,
-    title: tail.prompt.length > 36 ? `${tail.prompt.slice(0, 36)}…` : tail.prompt,
+    prompt: repaired.prompt,
+    title: repaired.prompt.length > 36 ? `${repaired.prompt.slice(0, 36)}…` : repaired.prompt,
     options,
     answer: answers,
     type,
@@ -214,6 +268,7 @@ function normaliseBank(bank) {
     name,
     filename: bank.filename || `${name}.docx`,
     importedAt: bank.importedAt || new Date().toISOString(),
+    normalisationVersion: BANK_NORMALISATION_VERSION,
     questions,
     questionCount: questions.length,
     singleCount: questions.filter((question) => question.type === 'single').length,
@@ -265,6 +320,7 @@ function setLocalStateDirty(value) {
 let importedBanks = loadImportedBanks();
 const completedSet = loadSet(COMPLETED_KEY);
 const wrongSet = loadSet(WRONG_KEY);
+const favoriteSet = loadSet(FAVORITE_KEY);
 const state = {
   activeBankId: null,
   wrongbookBankId: 'all',
@@ -292,6 +348,7 @@ function saveProgress() {
   try {
     localStorage.setItem(COMPLETED_KEY, JSON.stringify([...completedSet]));
     localStorage.setItem(WRONG_KEY, JSON.stringify([...wrongSet]));
+    localStorage.setItem(FAVORITE_KEY, JSON.stringify([...favoriteSet]));
   } catch { /* SQLite remains the primary store. */ }
   markProfileChanged();
 }
@@ -302,6 +359,7 @@ function profileSnapshot() {
     banks: importedBanks,
     completed: [...completedSet],
     wrong: [...wrongSet],
+    favorites: [...favoriteSet],
     preferences: {
       autoNextCorrect: state.autoNextCorrect,
       shuffleOptions: state.shufflePracticeOptions
@@ -315,6 +373,7 @@ function persistProfileLocally() {
     localStorage.setItem(BANK_STORAGE_KEY, JSON.stringify(importedBanks));
     localStorage.setItem(COMPLETED_KEY, JSON.stringify([...completedSet]));
     localStorage.setItem(WRONG_KEY, JSON.stringify([...wrongSet]));
+    localStorage.setItem(FAVORITE_KEY, JSON.stringify([...favoriteSet]));
     if (state.resumeBookmark) localStorage.setItem(LAST_PRACTICE_KEY, JSON.stringify(state.resumeBookmark));
     else localStorage.removeItem(LAST_PRACTICE_KEY);
   } catch { /* Large题库仍会由 SQLite 保存。 */ }
@@ -324,15 +383,21 @@ function persistProfileLocally() {
 
 function applyProfileSnapshot(snapshot) {
   const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
-  importedBanks = (Array.isArray(source.banks) ? source.banks : []).map(normaliseBank);
+  const sourceBanks = Array.isArray(source.banks) ? source.banks : [];
+  const requiresNormalisationSave = sourceBanks.some((bank) => Number(bank?.normalisationVersion || 0) < BANK_NORMALISATION_VERSION);
+  importedBanks = sourceBanks.map(normaliseBank);
   const knownQuestionIds = new Set(allQuestions().map((question) => question.id));
   completedSet.clear();
   wrongSet.clear();
+  favoriteSet.clear();
   (Array.isArray(source.completed) ? source.completed : []).forEach((questionId) => {
     if (knownQuestionIds.has(String(questionId))) completedSet.add(String(questionId));
   });
   (Array.isArray(source.wrong) ? source.wrong : []).forEach((questionId) => {
     if (knownQuestionIds.has(String(questionId))) wrongSet.add(String(questionId));
+  });
+  (Array.isArray(source.favorites) ? source.favorites : []).forEach((questionId) => {
+    if (knownQuestionIds.has(String(questionId))) favoriteSet.add(String(questionId));
   });
   state.autoNextCorrect = Boolean(source.preferences?.autoNextCorrect);
   state.shufflePracticeOptions = Boolean(source.preferences?.shuffleOptions);
@@ -343,6 +408,7 @@ function applyProfileSnapshot(snapshot) {
   }
   state.session = null;
   persistProfileLocally();
+  return requiresNormalisationSave;
 }
 
 function setSyncStatus(message, status = 'saved') {
@@ -402,11 +468,17 @@ async function initialiseProfileState() {
     if (!response.ok) throw new Error(result.error || '读取保存记录失败');
     state.cloud.ready = true;
     state.cloud.revision = Number(result.revision || 0);
-    const localHasState = importedBanks.length > 0 || completedSet.size > 0 || wrongSet.size > 0 || Boolean(state.resumeBookmark) || state.autoNextCorrect;
+    const localHasState = importedBanks.length > 0 || completedSet.size > 0 || wrongSet.size > 0 || favoriteSet.size > 0 || Boolean(state.resumeBookmark) || state.autoNextCorrect;
     if (result.hasState && !localStateIsDirty()) {
-      applyProfileSnapshot(result.state);
-      setLocalStateDirty(false);
-      setSyncStatus('已恢复', 'saved');
+      const migrated = applyProfileSnapshot(result.state);
+      if (migrated) {
+        setLocalStateDirty(true);
+        const saved = await flushCloudState();
+        if (saved) setSyncStatus('已修复并保存', 'saved');
+      } else {
+        setLocalStateDirty(false);
+        setSyncStatus('已恢复', 'saved');
+      }
     } else if (!result.hasState || localHasState || localStateIsDirty()) {
       await flushCloudState();
     } else {
@@ -451,20 +523,22 @@ function clearPracticeBookmark() {
 }
 function questionAnswers(question) { return [...new Set((question.answer || []).map((answer) => String(answer).toUpperCase()))].sort(); }
 function sameAnswers(left, right) { return left.length === right.length && left.every((answer, index) => answer === right[index]); }
-function bankWrongCount(bank) { return bank.questions.filter((question) => wrongSet.has(question.id)).length; }
-function globalWrongCount() { return allQuestions().filter((question) => wrongSet.has(question.id)).length; }
+function isWrongbookQuestion(questionId) { return wrongSet.has(questionId) || favoriteSet.has(questionId); }
+function bankWrongCount(bank) { return bank.questions.filter((question) => isWrongbookQuestion(question.id)).length; }
+function globalWrongCount() { return allQuestions().filter((question) => isWrongbookQuestion(question.id)).length; }
 
 function purgeBankState(bank) {
   bank.questions.forEach((question) => {
     completedSet.delete(question.id);
     wrongSet.delete(question.id);
+    favoriteSet.delete(question.id);
   });
 }
 
 function deleteBank(bankId) {
   const bank = importedBanks.find((item) => item.id === bankId);
   if (!bank) return;
-  if (!window.confirm(`确定删除题库“${bank.name}”吗？\n该题库的练习进度和错题记录也会一并删除。`)) return;
+  if (!window.confirm(`确定删除题库“${bank.name}”吗？\n该题库的练习进度、错题和收藏记录也会一并删除。`)) return;
   purgeBankState(bank);
   if (state.resumeBookmark?.bankId === bankId) clearPracticeBookmark();
   importedBanks = importedBanks.filter((item) => item.id !== bankId);
@@ -523,7 +597,7 @@ function renderLibrary() {
     return `<article class="bank-card">
       <div class="bank-card-top"><span class="folder-mark">▱</span><span class="bank-card-tools"><span class="bank-kind">${bank.ai?.used ? 'AI 题库' : 'Word 题库'}</span><button class="bank-delete" type="button" data-delete-bank="${escapeHtml(bank.id)}" aria-label="删除题库 ${escapeHtml(bank.name)}">删除</button></span></div>
       <h3>${escapeHtml(bank.name)}</h3><p>${escapeHtml(bank.filename)}</p>
-      <div class="bank-type-row"><span>单选 <strong>${singleCount}</strong></span><span>多选 <strong>${multiCount}</strong></span><span>错题 <strong>${bankWrongCount(bank)}</strong></span></div>
+      <div class="bank-type-row"><span>单选 <strong>${singleCount}</strong></span><span>多选 <strong>${multiCount}</strong></span><span>错题集 <strong>${bankWrongCount(bank)}</strong></span></div>
       <div class="bank-progress"><span style="width:${progress}%"></span></div>
       <div class="bank-card-foot"><small>已完成 ${completed} / ${bank.questions.length}</small><button type="button" data-open-bank="${escapeHtml(bank.id)}">进入题库 →</button></div>
     </article>`;
@@ -538,8 +612,8 @@ const MODE_CARDS = [
   { key: 'random-single', icon: '↝', title: '乱序单选', description: '随机题目顺序，只练单选题。' },
   { key: 'random-multi', icon: '⌁', title: '乱序多选', description: '随机题目顺序，只练多选题。' },
   { key: 'mock', icon: '▤', title: '模拟练习', description: '自定义单选、多选数量组成一套练习。' },
-  { key: 'wrong', icon: '↺', title: '错题练习', description: '只练当前题库中曾经答错的题目。' },
-  { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出当前题库的错题。' }
+  { key: 'wrong', icon: '↺', title: '错题练习', description: '练习当前题库中答错或收藏的题目。' },
+  { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出答错或收藏的题目。' }
 ];
 
 function renderBank(bank) {
@@ -582,9 +656,9 @@ function renderWrongbook(bank = null) {
   state.wrongbookBankId = bank?.id || 'all';
   showView('view-wrongbook');
   const source = bank ? bank.questions : allQuestions();
-  const questions = source.filter((question) => wrongSet.has(question.id));
+  const questions = source.filter((question) => isWrongbookQuestion(question.id));
   $('wrongbook-title').textContent = bank ? `${bank.name} · 错题集` : '全部错题集';
-  $('wrongbook-subtitle').textContent = bank ? '本题库答错的题目会持续保留，直到你手动移出。' : '所有题库中答错的题目都会集中保存在这里。';
+  $('wrongbook-subtitle').textContent = bank ? '本题库答错或收藏的题目会持续保留，直到你手动移出。' : '所有题库中答错或收藏的题目都会集中保存在这里。';
   $('wrongbook-count').textContent = questions.length;
   $('wrongbook-back').onclick = () => navigate(bank ? `#/bank/${encodeURIComponent(bank.id)}` : '#/banks');
   $('wrongbook-practice').disabled = questions.length === 0;
@@ -595,7 +669,10 @@ function renderWrongbook(bank = null) {
   };
   $('wrongbook-clear').onclick = () => {
     if (!questions.length || !window.confirm(`确定清空${bank ? `“${bank.name}”的` : '全部'}错题集吗？`)) return;
-    questions.forEach((question) => wrongSet.delete(question.id));
+    questions.forEach((question) => {
+      wrongSet.delete(question.id);
+      favoriteSet.delete(question.id);
+    });
     saveProgress();
     updateGlobalCounts();
     renderWrongbook(bank);
@@ -603,21 +680,23 @@ function renderWrongbook(bank = null) {
 
   const list = $('wrongbook-list');
   if (!questions.length) {
-    list.innerHTML = '<div class="wrongbook-empty"><span>✓</span><h2>暂无错题</h2><p>答错的题目会自动收集到这里。</p></div>';
+    list.innerHTML = '<div class="wrongbook-empty"><span>✓</span><h2>暂无题目</h2><p>答错或收藏的题目会自动收集到这里。</p></div>';
     return;
   }
   list.innerHTML = questions.map((question, index) => {
     const answers = questionAnswers(question);
     const answerOptions = question.options.filter(([key]) => answers.includes(key));
     const bankName = getBank(question.bankId)?.name || question.bankName || '题库';
+    const reasonBadges = `${wrongSet.has(question.id) ? '<span class="wrongbook-reason mistake">答错</span>' : ''}${favoriteSet.has(question.id) ? '<span class="wrongbook-reason favorite">★ 已收藏</span>' : ''}`;
     return `<article class="wrongbook-item">
-      <div class="wrongbook-item-top"><span class="wrongbook-index">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(bankName)}</span><span>${question.type === 'multi' ? '多选题' : '单选题'}</span><button type="button" data-remove-wrong="${escapeHtml(question.id)}">移出错题集</button></div>
+      <div class="wrongbook-item-top"><span class="wrongbook-index">${String(index + 1).padStart(2, '0')}</span><span>${escapeHtml(bankName)}</span><span>${question.type === 'multi' ? '多选题' : '单选题'}</span>${reasonBadges}<button type="button" data-remove-wrong="${escapeHtml(question.id)}">移出错题集</button></div>
       <h2>${escapeHtml(question.prompt)}</h2>
       <div class="wrongbook-answer"><strong>正确答案：${answers.join('、')}</strong>${answerOptions.length ? `<p>${answerOptions.map(([key, text]) => `${key}. ${escapeHtml(text)}`).join('　')}</p>` : ''}<small>${escapeHtml(question.explanation || '本题未生成解析。')}</small></div>
     </article>`;
   }).join('');
   list.querySelectorAll('[data-remove-wrong]').forEach((button) => button.addEventListener('click', () => {
     wrongSet.delete(button.dataset.removeWrong);
+    favoriteSet.delete(button.dataset.removeWrong);
     saveProgress();
     updateGlobalCounts();
     renderWrongbook(bank);
@@ -664,7 +743,7 @@ function buildSession(spec, routeKey = '') {
   const shouldShuffleOptions = typeof spec.shuffleOptions === 'boolean' ? spec.shuffleOptions : config.shuffleOptions;
   let bank = spec.bankId === 'all' ? null : getBank(spec.bankId);
   let source = bank ? [...bank.questions] : allQuestions();
-  if (spec.mode === 'wrong') source = source.filter((question) => wrongSet.has(question.id));
+  if (spec.mode === 'wrong') source = source.filter((question) => isWrongbookQuestion(question.id));
   else if (spec.mode === 'mock') {
     const singles = shuffle(source.filter((question) => question.type === 'single')).slice(0, spec.singleCount);
     const multis = shuffle(source.filter((question) => question.type === 'multi')).slice(0, spec.multiCount);
@@ -727,6 +806,25 @@ function beginSession(spec, routeKey = '') {
   savePracticeBookmark(state.session);
 }
 
+function renderQuestionFavorite(question) {
+  const button = $('question-favorite');
+  if (!button) return;
+  const active = favoriteSet.has(question.id);
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', String(active));
+  button.setAttribute('aria-label', active ? '取消收藏当前题目' : '收藏当前题目');
+  button.title = active ? '取消收藏当前题目' : '收藏当前题目';
+  $('question-favorite-icon').textContent = active ? '★' : '☆';
+  $('question-favorite-label').textContent = active ? '已收藏' : '收藏题目';
+  button.onclick = () => {
+    if (favoriteSet.has(question.id)) favoriteSet.delete(question.id);
+    else favoriteSet.add(question.id);
+    saveProgress();
+    updateGlobalCounts();
+    renderQuestionFavorite(question);
+  };
+}
+
 function renderCurrentQuestion() {
   const session = state.session;
   const question = session.questions[session.current];
@@ -737,6 +835,7 @@ function renderCurrentQuestion() {
   $('practice-count').textContent = `${session.current + 1} / ${session.questions.length}`;
   $('practice-progress').style.width = `${(session.current + 1) / session.questions.length * 100}%`;
   $('auto-next-correct').checked = state.autoNextCorrect;
+  renderQuestionFavorite(question);
   $('question-number').textContent = String(session.current + 1).padStart(2, '0');
   $('question-type').textContent = question.type === 'multi' ? '多选题 · 可选择多项' : '单选题 · 请选择 1 项';
   $('quiz-question').textContent = question.prompt;
