@@ -262,6 +262,8 @@ button:disabled { cursor:not-allowed; }
 .question-ai-prompt small { margin-top:4px; color:var(--muted); font-size:12px; }
 .question-ai-actions { display:flex; flex:0 0 auto; gap:9px; }
 .question-ai-actions button { min-height:42px; padding:10px 15px; font-size:13px; }
+.question-ai-actions .secondary-button { border:1px solid #bddbd5; color:#08766e; background:#fff; box-shadow:0 5px 14px rgba(29,78,72,.05); }
+.question-ai-actions .secondary-button:hover { border-color:#8fc9be; background:#f8fbfa; }
 .detail-shell { width:min(960px,100%); margin:0 auto; }
 .detail-navigation { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
 .compact-detail-button { padding:9px 13px; font-size:12px; }
