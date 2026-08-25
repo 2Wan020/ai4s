@@ -631,14 +631,14 @@ function renderLibrary() {
 }
 
 const MODE_CARDS = [
-  { key: 'ordered-single', icon: '01', title: '顺序单选', description: '按原题目顺序，只练单选题。' },
-  { key: 'ordered-multi', icon: '02', title: '顺序多选', description: '按原题目顺序，只练多选题。' },
-  { key: 'random-single', icon: '↝', title: '乱序单选', description: '随机题目顺序，只练单选题。' },
-  { key: 'random-multi', icon: '⌁', title: '乱序多选', description: '随机题目顺序，只练多选题。' },
-  { key: 'mock', icon: '▤', title: '模拟练习', description: '自定义单选、多选数量组成一套练习。' },
-  { key: 'wrong', icon: '↺', title: '错题练习', description: '练习当前题库中答错或收藏的题目。' },
-  { key: 'wrongbook', icon: '◇', title: '错题集', description: '查看、整理和移出答错或收藏的题目。' },
-  { key: 'favorites', icon: '★', title: '收藏夹', description: '查看并练习当前题库中收藏的题目。' }
+  { key: 'ordered-single', icon: '01', title: '顺序单选' },
+  { key: 'ordered-multi', icon: '02', title: '顺序多选' },
+  { key: 'random-single', icon: '↝', title: '乱序单选' },
+  { key: 'random-multi', icon: '⌁', title: '乱序多选' },
+  { key: 'mock', icon: '▤', title: '模拟练习' },
+  { key: 'wrong', icon: '↺', title: '错题练习' },
+  { key: 'wrongbook', icon: '◇', title: '错题集' },
+  { key: 'favorites', icon: '★', title: '收藏夹' }
 ];
 
 function renderBank(bank) {
@@ -662,7 +662,7 @@ function renderBank(bank) {
     const count = mode.key.includes('single') ? single.length : mode.key.includes('multi') ? multi.length : ['wrong', 'wrongbook'].includes(mode.key) ? wrong : mode.key === 'favorites' ? favorites : bank.questions.length;
     const disabled = count === 0 && !['wrongbook', 'favorites'].includes(mode.key);
     return `<button class="mode-card${['wrongbook', 'favorites'].includes(mode.key) ? ' wrongbook-card' : ''}" type="button" data-mode="${mode.key}" ${disabled ? 'disabled' : ''}>
-      <span class="mode-icon">${mode.icon}</span><span class="mode-copy"><strong>${mode.title}</strong><small>${mode.description}</small></span><span class="mode-count">${count} 题</span><span class="mode-arrow">→</span>
+      <span class="mode-icon">${mode.icon}</span><span class="mode-copy"><strong>${mode.title}</strong></span><span class="mode-count">${count} 题</span><span class="mode-arrow">→</span>
     </button>`;
   }).join('');
   $('mode-grid').querySelectorAll('[data-mode]:not([disabled])').forEach((button) => button.addEventListener('click', () => {
@@ -685,7 +685,6 @@ function renderWrongbook(bank = null, collectionKind = 'wrongbook') {
   showView('view-wrongbook');
   const source = bank ? bankAllQuestions(bank) : allQuestions();
   const questions = source.filter((question) => favoritesOnly ? favoriteSet.has(question.id) : isWrongbookQuestion(question.id));
-  $('wrongbook-eyebrow').textContent = favoritesOnly ? 'FAVORITE QUESTION COLLECTION' : 'WRONG QUESTION COLLECTION';
   $('wrongbook-title').textContent = bank ? `${bank.name} · ${favoritesOnly ? '收藏夹' : '错题集'}` : favoritesOnly ? '全部收藏夹' : '全部错题集';
   $('wrongbook-subtitle').textContent = favoritesOnly
     ? '收藏的题目集中保存在这里，可随时重新练习。'
@@ -801,14 +800,13 @@ function buildSession(spec, routeKey = '') {
   } else source = source.filter((question) => question.type === config.type);
   if (config.shuffleQuestions && spec.mode !== 'mock') source = shuffle(source);
   const questions = source.map((question) => prepareQuestion(question, shouldShuffleOptions));
-  const optionOrderLabel = OPTION_ORDER_MODES.has(spec.mode) ? ` · ${shouldShuffleOptions ? '选项乱序' : '选项原序'}` : '';
   return {
     spec,
     routeKey,
     bankId: spec.bankId,
     bankName: bank ? bank.name : '全部题库',
     mode: spec.mode,
-    modeLabel: `${config.label}${optionOrderLabel}`,
+    modeLabel: config.label,
     shuffleOptionsForNext: shouldShuffleOptions,
     questions,
     current: 0,
@@ -901,7 +899,7 @@ function renderCurrentQuestion() {
   response.optionOrderLocked = true;
   showView('view-practice');
   $('practice-bank').textContent = session.bankName;
-  session.modeLabel = `${MODE_CONFIG[session.mode].label} · ${question.optionOrderShuffled ? '选项乱序' : '选项原序'}`;
+  session.modeLabel = MODE_CONFIG[session.mode].label;
   $('practice-mode').textContent = session.modeLabel;
   $('practice-count').textContent = `${session.current + 1} / ${session.questions.length}`;
   $('practice-progress').style.width = `${(session.current + 1) / session.questions.length * 100}%`;
@@ -1151,9 +1149,10 @@ function renderRelatedPractice(question, response) {
   const visible = Boolean(response.aiExplanation && !response.aiLoading && response.submitted && response.hasAnswer && !response.correct);
   section.hidden = !visible;
   if (!visible) return;
+  $('related-origin-question').textContent = question.prompt;
   const button = $('related-generate');
   button.disabled = Boolean(response.relatedLoading);
-  button.textContent = response.relatedLoading ? '正在获取…' : response.relatedLoaded ? '重新获取' : '获取相关题目';
+  button.textContent = response.relatedLoading ? '查看获取进度' : response.relatedLoaded ? '查看相关题目' : '获取相关题目';
   const status = $('related-status');
   status.hidden = !response.relatedLoading && !response.relatedError;
   status.className = `related-status${response.relatedError ? ' error' : ''}`;
@@ -1187,7 +1186,12 @@ function renderQuestionAiPanel(question, response) {
 
   generateButton.disabled = response.aiLoading;
   skipButton.disabled = response.aiLoading;
-  prompt.hidden = Boolean(response.aiExplanation);
+  generateButton.textContent = response.aiLoading ? '生成中…' : '查看解析';
+  prompt.hidden = false;
+  $('explanation-question-number').textContent = `第 ${state.session.current + 1} 题`;
+  $('explanation-question').textContent = question.prompt;
+  $('explanation-answer-summary').textContent = `你的答案：${response.selected.join('、')} · 正确答案：${question.displayAnswers.join('、')}`;
+  $('explanation-retry').hidden = !response.aiError || response.aiLoading;
   content.hidden = !response.aiExplanation;
   content.classList.toggle('streaming', Boolean(response.aiLoading));
   status.hidden = !response.aiLoading && !response.aiError;
@@ -1213,6 +1217,42 @@ function renderQuestionAiPanel(question, response) {
     return;
   }
   $('related-practice').hidden = true;
+}
+
+function returnToCurrentPractice() {
+  if (!state.session) return;
+  showView('view-practice');
+  renderCurrentQuestion();
+  resetQuestionCardOnMobile();
+}
+
+function showCurrentQuestionExplanation() {
+  const session = state.session;
+  if (!session) return;
+  const question = session.questions[session.current];
+  const response = session.responses[session.current];
+  if (!response?.submitted || !response.hasAnswer) return;
+  showView('view-explanation');
+  renderQuestionAiPanel(question, response);
+}
+
+function openCurrentQuestionExplanation() {
+  const session = state.session;
+  if (!session) return;
+  const response = session.responses[session.current];
+  showCurrentQuestionExplanation();
+  if (!response.aiExplanation && !response.aiLoading) generateCurrentQuestionExplanation();
+}
+
+function openCurrentRelatedQuestions() {
+  const session = state.session;
+  if (!session) return;
+  const question = session.questions[session.current];
+  const response = session.responses[session.current];
+  if (!response?.submitted || response.correct || !response.aiExplanation) return;
+  showView('view-related');
+  renderRelatedPractice(question, response);
+  if (!response.relatedLoaded && !response.relatedLoading) generateRelatedQuestions();
 }
 
 function updateOptionState() {
@@ -1854,11 +1894,15 @@ $('practice-shuffle-options').addEventListener('change', (event) => {
   }
   savePracticeBookmark(session);
 });
-$('question-ai-generate').addEventListener('click', generateCurrentQuestionExplanation);
+$('question-ai-generate').addEventListener('click', openCurrentQuestionExplanation);
 $('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);
+$('explanation-back').addEventListener('click', returnToCurrentPractice);
+$('explanation-retry').addEventListener('click', generateCurrentQuestionExplanation);
 $('tutor-form').addEventListener('submit', submitQuestionFollowup);
 $('tutor-input').addEventListener('keydown', handleTutorInputKeydown);
-$('related-generate').addEventListener('click', generateRelatedQuestions);
+$('related-generate').addEventListener('click', openCurrentRelatedQuestions);
+$('related-explanation-back').addEventListener('click', showCurrentQuestionExplanation);
+$('related-practice-back').addEventListener('click', returnToCurrentPractice);
 $('related-results').addEventListener('click', handleRelatedResultsClick);
 $('next-button').addEventListener('click', nextQuestion);
 $('previous-button').addEventListener('click', previousQuestion);

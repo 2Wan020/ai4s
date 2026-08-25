@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=23" />
+    <link rel="stylesheet" href="styles.css?v=25" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -14,7 +14,7 @@
     <header class="topbar shell">
       <button class="brand" type="button" data-nav="#/banks" aria-label="返回题库列表">
         <span class="brand-mark">土</span>
-        <span><strong>土豆题库</strong><small>一文件 · 一题库 · 一题一卡</small></span>
+        <strong>土豆题库</strong>
       </button>
       <nav class="topnav" aria-label="主要导航">
         <span class="sync-status" id="sync-status" data-state="saving" role="status" aria-live="polite">连接存储</span>
@@ -25,10 +25,7 @@
     <main class="shell app-main">
       <section class="view" id="view-library">
         <div class="library-toolbar">
-          <div>
-            <p class="eyebrow">MY QUESTION BANKS</p>
-            <h1>我的题库</h1>
-          </div>
+          <h1>我的题库</h1>
           <div class="library-tools">
             <label class="search-box"><span>⌕</span><input id="bank-search" type="search" placeholder="搜索题库名称" /></label>
             <button class="primary-button compact-button" type="button" id="hero-import-button">＋ 导入题库</button>
@@ -37,8 +34,7 @@
 
         <section class="import-panel" id="import-panel" hidden>
           <div class="import-panel-top">
-            <p class="eyebrow">FILE IMPORT</p>
-            <button class="collapse-import" type="button" id="close-import" aria-label="收起题库导入面板">收起导入面板 ↑</button>
+            <button class="collapse-import" type="button" id="close-import" aria-label="收起题库导入面板">收起 ↑</button>
           </div>
           <div class="import-copy">
             <h2>导入题库文件</h2>
@@ -61,7 +57,7 @@
               <span class="check-visual" aria-hidden="true">✓</span>
               <span><strong>普通识别</strong><small>使用服务器本地规则拆题，不调用 AI，速度更快</small></span>
             </label>
-            <p class="ai-privacy">图片与扫描 PDF 先在服务器本地 OCR；精确识别只发送提取后的题目文字。普通识别不调用外部 API，API Key 始终保存在服务器端。</p>
+            <p class="ai-privacy">普通识别不调用外部服务；API Key 仅保存在服务器端。</p>
           </div>
           <div class="import-status" id="import-status" role="status"></div>
           <details class="format-help">
@@ -83,15 +79,15 @@ C. 选项三
         <button class="back-button" type="button" data-nav="#/banks">← 返回题库列表</button>
         <div class="bank-hero">
           <div class="bank-hero-icon">▱</div>
-          <div class="bank-hero-copy"><p class="eyebrow">QUESTION BANK</p><h1 id="bank-title">题库</h1><p id="bank-filename">文件名</p></div>
+          <div class="bank-hero-copy"><h1 id="bank-title">题库</h1><p id="bank-filename">文件名</p></div>
           <div class="bank-hero-stats"><span><strong id="bank-total">0</strong>全部题目</span><span><strong id="bank-single">0</strong>单选题</span><span><strong id="bank-multi">0</strong>多选题</span><span><strong id="bank-wrong">0</strong>错题</span></div>
         </div>
 
         <div class="page-heading">
-          <div><p class="eyebrow">CHOOSE A MODE</p><h2>选择答题模式</h2></div>
+          <h2>选择答题模式</h2>
           <label class="option-shuffle-toggle" for="shuffle-options-toggle">
             <input type="checkbox" id="shuffle-options-toggle" />
-            <span><strong>打乱选项顺序</strong><small>单选、多选模式均生效</small></span>
+            <strong>打乱选项顺序</strong>
           </label>
         </div>
         <div class="mode-grid" id="mode-grid"></div>
@@ -101,7 +97,6 @@ C. 选项三
         <button class="back-button" type="button" id="wrongbook-back">← 返回</button>
         <div class="wrongbook-head">
           <div>
-            <p class="eyebrow" id="wrongbook-eyebrow">WRONG QUESTION COLLECTION</p>
             <h1 id="wrongbook-title">错题集</h1>
             <p id="wrongbook-subtitle">答错或收藏的题目会自动保存在这里。</p>
           </div>
@@ -118,12 +113,8 @@ C. 选项三
         <button class="back-button" type="button" id="mock-back">← 返回模式选择</button>
         <div class="mock-layout">
           <div class="mock-copy">
-            <p class="eyebrow">CUSTOM MOCK PRACTICE</p>
             <h1>模拟练习组卷</h1>
             <p id="mock-bank-name">从当前题库中选择单选题、多选题数量，随机组成一套练习。</p>
-            <div class="mock-feature"><span>01</span><div><strong>按题型抽题</strong><small>分别设置单选和多选数量</small></div></div>
-            <div class="mock-feature"><span>02</span><div><strong>自动随机</strong><small>题目与选项顺序均会打乱</small></div></div>
-            <div class="mock-feature"><span>03</span><div><strong>完成报告</strong><small>查看正确率并自动收录错题</small></div></div>
           </div>
           <form class="mock-form" id="mock-form">
             <div class="mock-form-head"><span>组卷设置</span><strong id="mock-total">共 0 题</strong></div>
@@ -172,59 +163,88 @@ C. 选项三
                 <div><span>解析</span><strong>是否查看这道题的解析？</strong></div>
                 <div class="question-ai-actions"><button class="secondary-button" type="button" id="question-ai-generate">查看解析</button><button class="ghost-button" type="button" id="question-ai-skip">暂不查看</button></div>
               </div>
-              <p class="question-ai-status" id="question-ai-status" hidden></p>
-              <div class="question-ai-content" id="question-ai-content" hidden>
-                <strong>题目解析</strong>
-                <div class="question-ai-text markdown-body" id="question-ai-text"></div>
-                <div class="tutor-followup">
-                  <div class="tutor-followup-head"><strong>还有疑问？</strong><small>Enter 发送，Shift+Enter 换行</small></div>
-                  <div class="tutor-messages" id="tutor-messages" aria-live="polite" hidden></div>
-                  <form class="tutor-form" id="tutor-form">
-                    <label class="sr-only" for="tutor-input">继续追问题目解析</label>
-                    <textarea id="tutor-input" rows="2" maxlength="1000" placeholder="例如：为什么 B 选项不正确？" aria-keyshortcuts="Enter Shift+Enter"></textarea>
-                    <button class="secondary-button" type="submit" id="tutor-send">发送</button>
-                  </form>
-                  <p class="tutor-status" id="tutor-status" role="status" hidden></p>
-                </div>
-                <div class="related-practice" id="related-practice" hidden>
-                  <div class="related-practice-head">
-                    <div><strong>继续巩固这道错题</strong><small>搜索题库，并联网生成新的相关练习</small></div>
-                    <button class="secondary-button" type="button" id="related-generate">获取相关题目</button>
-                  </div>
-                  <p class="related-status" id="related-status" role="status" hidden></p>
-                  <div class="related-results" id="related-results" aria-live="polite" hidden>
-                    <section class="related-group">
-                      <div class="related-group-head"><strong>题库内相关题</strong><small>根据题干与选项匹配</small></div>
-                      <div class="related-list" id="related-local-list"></div>
-                    </section>
-                    <section class="related-group">
-                      <div class="related-group-head"><strong>联网拓展题</strong><small>根据公开搜索结果重新设计</small></div>
-                      <div class="related-list" id="related-web-list"></div>
-                    </section>
-                    <div class="related-sources" id="related-sources" hidden></div>
-                  </div>
-                </div>
-              </div>
             </section>
             <div class="quiz-actions">
               <button class="ghost-button" type="button" id="previous-button">上一题</button>
               <button class="secondary-button" type="button" id="submit-button">提交答案</button>
               <button class="primary-button" type="button" id="next-button" hidden>下一题 <span>→</span></button>
+            </div>
+          </article>
+          <div class="practice-jump-area">
               <form class="question-jump-form" id="question-jump-form" title="按本次练习中的题号跳转" novalidate>
                 <label for="question-jump-input">跳转到</label>
                 <input type="number" id="question-jump-input" min="1" step="1" inputmode="numeric" autocomplete="off" aria-label="要跳转到的题号" required />
                 <span>题</span>
                 <button type="submit">跳转</button>
               </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="view detail-view" id="view-explanation" hidden>
+        <div class="detail-shell">
+          <div class="detail-navigation">
+            <button class="back-button" type="button" id="explanation-back">← 返回刷题</button>
+            <button class="ghost-button compact-detail-button" type="button" id="explanation-retry" hidden>重新生成</button>
+          </div>
+          <article class="detail-card explanation-card">
+            <div class="detail-question-context">
+              <span id="explanation-question-number">第 1 题</span>
+              <h1 id="explanation-question"></h1>
+              <p id="explanation-answer-summary"></p>
+            </div>
+            <p class="question-ai-status" id="question-ai-status" role="status" hidden></p>
+            <div class="question-ai-content" id="question-ai-content" hidden>
+              <strong>题目解析</strong>
+              <div class="question-ai-text markdown-body" id="question-ai-text"></div>
+              <div class="tutor-followup">
+                <div class="tutor-followup-head"><strong>还有疑问？</strong></div>
+                <div class="tutor-messages" id="tutor-messages" aria-live="polite" hidden></div>
+                <form class="tutor-form" id="tutor-form">
+                  <label class="sr-only" for="tutor-input">继续追问题目解析</label>
+                  <textarea id="tutor-input" rows="2" maxlength="1000" aria-keyshortcuts="Enter Shift+Enter"></textarea>
+                  <button class="secondary-button" type="submit" id="tutor-send">发送</button>
+                </form>
+                <p class="tutor-status" id="tutor-status" role="status" hidden></p>
+              </div>
+              <div class="related-practice" id="related-practice" hidden>
+                <div class="related-practice-head">
+                  <button class="secondary-button" type="button" id="related-generate">获取相关题目</button>
+                </div>
+              </div>
             </div>
           </article>
+        </div>
+      </section>
+
+      <section class="view detail-view" id="view-related" hidden>
+        <div class="detail-shell">
+          <div class="detail-navigation">
+            <button class="back-button" type="button" id="related-explanation-back">← 返回解析</button>
+            <button class="ghost-button compact-detail-button" type="button" id="related-practice-back">返回刷题</button>
+          </div>
+          <div class="detail-page-heading">
+            <h1>相关题目</h1>
+            <p id="related-origin-question"></p>
+          </div>
+          <p class="related-status" id="related-status" role="status" hidden></p>
+          <div class="related-results related-page-results" id="related-results" aria-live="polite" hidden>
+            <section class="related-group">
+              <div class="related-group-head"><strong>题库内相关题</strong></div>
+              <div class="related-list" id="related-local-list"></div>
+            </section>
+            <section class="related-group">
+              <div class="related-group-head"><strong>联网拓展题</strong></div>
+              <div class="related-list" id="related-web-list"></div>
+            </section>
+            <div class="related-sources" id="related-sources" hidden></div>
+          </div>
         </div>
       </section>
 
       <section class="view" id="view-result" hidden>
         <div class="result-card">
           <span class="result-mark">✓</span>
-          <p class="eyebrow">SESSION COMPLETE</p>
           <h1>本次练习完成</h1>
           <p id="result-subtitle">继续保持。</p>
           <div class="result-stats"><div><strong id="result-total">0</strong><span>完成题目</span></div><div><strong id="result-correct">0</strong><span>回答正确</span></div><div><strong id="result-accuracy">0%</strong><span>正确率</span></div></div>
@@ -241,8 +261,7 @@ C. 选项三
       </section>
     </main>
 
-    <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=28"></script>
+    <script src="app.js?v=30"></script>
   </body>
 </html>
