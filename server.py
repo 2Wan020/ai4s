@@ -2295,6 +2295,7 @@ def validate_profile_state(raw_state) -> dict:
         "preferences": {
             "autoNextCorrect": bool(preferences.get("autoNextCorrect", False)),
             "shuffleOptions": bool(preferences.get("shuffleOptions", False)),
+            "mockShuffleQuestions": bool(preferences.get("mockShuffleQuestions", True)),
         },
         "lastPractice": clean_last_practice,
     }

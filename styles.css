@@ -200,6 +200,13 @@ button:disabled { cursor:not-allowed; }
 .count-field span small { margin-top:4px; color:var(--muted); font-size:9px; }
 .count-field input { width:82px; padding:10px; border:1px solid #b9dcd4; border-radius:9px; outline:0; color:var(--ink); background:#fff; text-align:center; font-weight:800; }
 .count-field input:focus { border-color:var(--teal); }
+.mock-order-toggle { position:relative; display:flex; align-items:center; gap:10px; margin-top:11px; padding:14px 17px; border:1px solid var(--line); border-radius:12px; background:#fbfdfc; cursor:pointer; user-select:none; }
+.mock-order-toggle:hover { border-color:#8bcbbf; background:#fff; }
+.mock-order-toggle input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+.mock-order-check { display:grid; flex:0 0 auto; width:20px; height:20px; place-items:center; border:1px solid #8fcfc2; border-radius:6px; color:transparent; background:#fff; font-size:13px; font-weight:800; }
+.mock-order-toggle input:checked + .mock-order-check { border-color:var(--teal); color:#fff; background:var(--teal); }
+.mock-order-toggle input:focus-visible + .mock-order-check { outline:3px solid rgba(15,143,131,.2); outline-offset:2px; }
+.mock-order-toggle strong { font-size:13px; }
 .mock-summary { margin:18px 0; padding:14px 3px; color:var(--muted); font-size:10px; }
 .mock-summary strong { color:var(--teal-dark); }
 .form-error { margin:0 0 13px; color:var(--red); font-size:11px; }

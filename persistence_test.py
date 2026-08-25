@@ -94,7 +94,11 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
             "completed": [question_id] if completed else [],
             "wrong": [],
             "favorites": [question_id, saved_related_id],
-            "preferences": {"autoNextCorrect": True, "shuffleOptions": True},
+            "preferences": {
+                "autoNextCorrect": True,
+                "shuffleOptions": True,
+                "mockShuffleQuestions": False,
+            },
             "lastPractice": {
                 "routeKey": f"#/bank/{bank_id}/practice/ordered-single",
                 "questionId": question_id,

@@ -5,6 +5,7 @@ const WRONG_KEY = 'tudou-wrong-v2';
 const FAVORITE_KEY = 'tudou-favorites-v1';
 const AUTO_NEXT_CORRECT_KEY = 'tudou-auto-next-correct-v1';
 const SHUFFLE_OPTIONS_KEY = 'tudou-shuffle-options-v1';
+const MOCK_SHUFFLE_QUESTIONS_KEY = 'tudou-mock-shuffle-questions-v1';
 const LAST_PRACTICE_KEY = 'tudou-last-practice-v1';
 const CLOUD_DIRTY_KEY = 'tudou-cloud-dirty-v1';
 const BANK_NORMALISATION_VERSION = 3;
@@ -298,8 +299,11 @@ function loadSet(key) {
   try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch { return new Set(); }
 }
 
-function loadBooleanPreference(key) {
-  try { return localStorage.getItem(key) === '1'; } catch { return false; }
+function loadBooleanPreference(key, fallback = false) {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value === '1';
+  } catch { return fallback; }
 }
 
 function saveBooleanPreference(key, value) {
@@ -338,6 +342,7 @@ const state = {
   lastSpec: null,
   autoNextCorrect: loadBooleanPreference(AUTO_NEXT_CORRECT_KEY),
   shufflePracticeOptions: loadBooleanPreference(SHUFFLE_OPTIONS_KEY),
+  mockShuffleQuestions: loadBooleanPreference(MOCK_SHUFFLE_QUESTIONS_KEY, true),
   resumeBookmark: loadPracticeBookmark(),
   cloud: { ready: false, saving: false, pending: false, timer: null, revision: 0 }
 };
@@ -372,7 +377,8 @@ function profileSnapshot() {
     favorites: [...favoriteSet],
     preferences: {
       autoNextCorrect: state.autoNextCorrect,
-      shuffleOptions: state.shufflePracticeOptions
+      shuffleOptions: state.shufflePracticeOptions,
+      mockShuffleQuestions: state.mockShuffleQuestions
     },
     lastPractice: state.resumeBookmark
   };
@@ -389,6 +395,7 @@ function persistProfileLocally() {
   } catch { /* Large题库仍会由 SQLite 保存。 */ }
   saveBooleanPreference(AUTO_NEXT_CORRECT_KEY, state.autoNextCorrect);
   saveBooleanPreference(SHUFFLE_OPTIONS_KEY, state.shufflePracticeOptions);
+  saveBooleanPreference(MOCK_SHUFFLE_QUESTIONS_KEY, state.mockShuffleQuestions);
 }
 
 function applyProfileSnapshot(snapshot) {
@@ -411,6 +418,9 @@ function applyProfileSnapshot(snapshot) {
   });
   state.autoNextCorrect = Boolean(source.preferences?.autoNextCorrect);
   state.shufflePracticeOptions = Boolean(source.preferences?.shuffleOptions);
+  state.mockShuffleQuestions = typeof source.preferences?.mockShuffleQuestions === 'boolean'
+    ? source.preferences.mockShuffleQuestions
+    : true;
   const bookmark = source.lastPractice && typeof source.lastPractice === 'object' ? source.lastPractice : null;
   state.resumeBookmark = bookmark && (bookmark.bankId === 'all' || getBank(bookmark.bankId)) ? bookmark : null;
   if (state.resumeBookmark?.mode === 'mock' && state.resumeBookmark.spec) {
@@ -754,8 +764,22 @@ function renderMock(bank) {
   $('mock-multi-count').max = multiCount;
   $('mock-single-count').value = Math.min(10, singleCount);
   $('mock-multi-count').value = Math.min(5, multiCount);
+  const questionOrderToggle = $('mock-shuffle-questions');
+  questionOrderToggle.checked = state.mockShuffleQuestions;
+  questionOrderToggle.onchange = (event) => {
+    state.mockShuffleQuestions = event.currentTarget.checked;
+    saveBooleanPreference(MOCK_SHUFFLE_QUESTIONS_KEY, state.mockShuffleQuestions);
+    markProfileChanged();
+    updateMockOrderSummary();
+  };
   $('mock-back').onclick = () => navigate(`#/bank/${encodeURIComponent(bank.id)}`);
   updateMockTotal();
+}
+
+function updateMockOrderSummary() {
+  const questionOrder = state.mockShuffleQuestions ? '题目乱序' : '题库原序';
+  const optionOrder = state.shufflePracticeOptions ? '选项乱序' : '选项原序';
+  $('mock-order-summary').textContent = `${questionOrder} · ${optionOrder}`;
 }
 
 function updateMockTotal() {
@@ -763,6 +787,7 @@ function updateMockTotal() {
   const multi = Math.max(0, Number($('mock-multi-count').value || 0));
   $('mock-total').textContent = `共 ${single + multi} 题`;
   $('mock-error').hidden = true;
+  updateMockOrderSummary();
 }
 
 function prepareQuestion(question, shouldShuffleOptions) {
@@ -796,7 +821,13 @@ function buildSession(spec, routeKey = '') {
   else if (spec.mode === 'mock') {
     const singles = shuffle(source.filter((question) => question.type === 'single')).slice(0, spec.singleCount);
     const multis = shuffle(source.filter((question) => question.type === 'multi')).slice(0, spec.multiCount);
-    source = shuffle([...singles, ...multis]);
+    const selectedQuestions = [...singles, ...multis];
+    const shuffleQuestions = typeof spec.shuffleQuestions === 'boolean' ? spec.shuffleQuestions : state.mockShuffleQuestions;
+    if (shuffleQuestions) source = shuffle(selectedQuestions);
+    else {
+      const selectedIds = new Set(selectedQuestions.map((question) => question.id));
+      source = source.filter((question) => selectedIds.has(question.id));
+    }
   } else source = source.filter((question) => question.type === config.type);
   if (config.shuffleQuestions && spec.mode !== 'mock') source = shuffle(source);
   const questions = source.map((question) => prepareQuestion(question, shouldShuffleOptions));
@@ -1765,7 +1796,14 @@ function renderRoute() {
       if (!state.session || state.session.routeKey !== routeKey) {
         if (parts[3] === 'mock') {
           if (!state.mockConfig || state.mockConfig.bankId !== bank.id) { navigate(`#/bank/${encodeURIComponent(bank.id)}/mock`); return; }
-          beginSession({ bankId: bank.id, mode: 'mock', singleCount: state.mockConfig.singleCount, multiCount: state.mockConfig.multiCount }, routeKey);
+          beginSession({
+            bankId: bank.id,
+            mode: 'mock',
+            singleCount: state.mockConfig.singleCount,
+            multiCount: state.mockConfig.multiCount,
+            shuffleQuestions: state.mockConfig.shuffleQuestions,
+            shuffleOptions: state.mockConfig.shuffleOptions
+          }, routeKey);
         } else {
           const optionOrder = parts[4];
           const shuffleOptions = optionOrder === 'shuffle' ? true : optionOrder === 'fixed' ? false : undefined;
@@ -1868,7 +1906,13 @@ $('mock-form').addEventListener('submit', (event) => {
   else if (singleCount > singleAvailable || multiCount > multiAvailable) error = '选择数量不能超过题库中的可用题目。';
   else if (singleCount + multiCount === 0) error = '请至少选择 1 道题。';
   if (error) { $('mock-error').textContent = error; $('mock-error').hidden = false; return; }
-  state.mockConfig = { bankId: bank.id, singleCount, multiCount };
+  state.mockConfig = {
+    bankId: bank.id,
+    singleCount,
+    multiCount,
+    shuffleQuestions: state.mockShuffleQuestions,
+    shuffleOptions: state.shufflePracticeOptions
+  };
   state.session = null;
   navigate(`#/bank/${encodeURIComponent(bank.id)}/practice/mock`);
 });

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=25" />
+    <link rel="stylesheet" href="styles.css?v=26" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -120,7 +120,12 @@ C. 选项三
             <div class="mock-form-head"><span>组卷设置</span><strong id="mock-total">共 0 题</strong></div>
             <label class="count-field"><span><strong>单选题</strong><small id="mock-single-help">可选 0 题</small></span><input id="mock-single-count" type="number" min="0" value="0" /></label>
             <label class="count-field"><span><strong>多选题</strong><small id="mock-multi-help">可选 0 题</small></span><input id="mock-multi-count" type="number" min="0" value="0" /></label>
-            <div class="mock-summary"><span>答题顺序</span><strong>随机题目 + 随机选项</strong></div>
+            <label class="mock-order-toggle" for="mock-shuffle-questions">
+              <input type="checkbox" id="mock-shuffle-questions" />
+              <span class="mock-order-check" aria-hidden="true">✓</span>
+              <strong>打乱题目顺序</strong>
+            </label>
+            <div class="mock-summary"><span>答题顺序</span><strong id="mock-order-summary">随机题目 · 原选项</strong></div>
             <p class="form-error" id="mock-error" hidden></p>
             <button class="primary-button wide" type="submit">生成练习并开始 <span>→</span></button>
           </form>
@@ -262,6 +267,6 @@ C. 选项三
     </main>
 
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=30"></script>
+    <script src="app.js?v=31"></script>
   </body>
 </html>
