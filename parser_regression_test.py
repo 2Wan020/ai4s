@@ -142,6 +142,55 @@ class OrdinaryImportParserRegressionTests(unittest.TestCase):
         self.assertEqual(question["answer"], ["C"])
         self.assertTrue(any("B 选项自动拆开" in warning for warning in warnings))
 
+    def test_bare_option_label_keeps_wrapped_text_out_of_prompt(self):
+        question, warnings = self.parse_one([
+            "22、王某丢失手表，下列说法正确的有（ ）。",
+            "A、",
+            "自招领公告发布之日起一年内无人认领的，遗失物归国家所有",
+            "B、该手表属于孙某",
+            "C、该手表属于林某",
+            "D、郑某善意取得该手表",
+            "答案：AC",
+        ])
+        self.assertEqual(question["prompt"], "王某丢失手表，下列说法正确的有（ ）。")
+        self.assertEqual(question["options"][0], ["A", "自招领公告发布之日起一年内无人认领的，遗失物归国家所有"])
+        self.assertEqual([key for key, _ in question["options"]], list("ABCD"))
+        self.assertEqual(question["answer"], ["A", "C"])
+        self.assertFalse(any("没有对应选项" in warning for warning in warnings))
+
+    def test_bare_last_option_label_does_not_merge_into_previous_option(self):
+        question, warnings = self.parse_one([
+            "59、治安管理处罚决定书应包括哪些内容（ ）。",
+            "A、被处罚人信息",
+            "B、违法事实和证据",
+            "C、救济途径和期限",
+            "D、",
+            "作出处罚决定的公安机关名称和日期",
+            "答案：ABCD",
+        ])
+        self.assertEqual(question["options"][2], ["C", "救济途径和期限"])
+        self.assertEqual(question["options"][3], ["D", "作出处罚决定的公安机关名称和日期"])
+        self.assertEqual(question["answer"], list("ABCD"))
+        self.assertEqual(question["type"], "multi")
+        self.assertFalse(any("没有对应选项" in warning for warning in warnings))
+
+    def test_wrapped_chinese_and_number_fragments_do_not_gain_spaces(self):
+        question, _ = self.parse_one([
+            "60、甲将100万元现金退还后,又揭发了同案",
+            "犯乙的犯罪事实。对甲应当（A）。",
+            "A、可以从轻或者减轻处罚",
+            "B、应当从重处罚",
+            "C、免除处罚",
+            "D、维持原处罚",
+        ])
+        self.assertIn("100万元", question["prompt"])
+        self.assertIn("同案犯乙", question["prompt"])
+        self.assertNotIn("1 00", question["prompt"])
+        self.assertNotIn("同案 犯", question["prompt"])
+
+    def test_wrapped_latin_words_keep_a_separator(self):
+        self.assertEqual(server.join_wrapped_text("supports legacy", "Word files"), "supports legacy Word files")
+
     def test_bare_a_option_at_end_of_stem_and_bare_following_options_are_recovered(self):
         question, warnings = self.parse_one([
             "54. 要坚持把（C）作为党的奋斗目标。 A促进人的全面发展",

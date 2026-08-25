@@ -70,6 +70,9 @@ NAMED_QUESTION_RE = re.compile(
     r"^\s*(?:第\s*(\d{1,4})\s*题|题目\s*(\d{1,4}))\s*(?:[\.．、。:：\)）]?\s*)(.+)$"
 )
 OPTION_RE = re.compile(r"^\s*[\(（\[【]?\s*([A-Ha-h])(?:\s*[\)）\]】\.．、:：\-—]\s*|\s+)(.+)$")
+EMPTY_OPTION_RE = re.compile(
+    r"^\s*[\(（\[【]?\s*([A-Ha-h])\s*[\)）\]】\.．、:：\-—]\s*$"
+)
 ATTACHED_NUMERIC_OPTION_RE = re.compile(
     r"^\s*([A-Ha-h])(?=[+-]?(?:\d|[零一二三四五六七八九十百千万两]))(.+)$"
 )
@@ -152,6 +155,35 @@ def clean_text(value: str) -> str:
     normalised = value.translate(FULLWIDTH_OPTION_TRANSLATION)
     normalised = normalised.replace("\u00a0", " ").replace("\u200b", "").replace("\ufeff", "")
     return re.sub(r"\s+", " ", normalised).strip()
+
+
+def join_wrapped_text(left: str, right: str) -> str:
+    """Rejoin text split only by Word/PDF visual line wrapping.
+
+    Chinese documents are commonly wrapped in the middle of a word, number,
+    or sentence. Inserting a normal space at every extracted line boundary
+    produces artifacts such as ``民事纠 纷`` and ``1 00元``. Preserve a space
+    only for likely Latin-word boundaries; CJK, numeric and punctuation
+    boundaries are joined directly.
+    """
+    first = clean_text(left)
+    second = clean_text(right)
+    if not first:
+        return second
+    if not second:
+        return first
+    left_char = first[-1]
+    right_char = second[0]
+    cjk = r"\u3400-\u9fff"
+    compact_left = re.match(rf"[{cjk}0-9]", left_char) or left_char in "（([【《“‘，。；：！？、,.;:!?/％%"
+    compact_right = re.match(rf"[{cjk}0-9]", right_char) or right_char in "）)]】》”’，。；：！？、,.;:!?/％%"
+    cross_script = (
+        (re.match(rf"[{cjk}]", left_char) and right_char.isascii() and right_char.isalpha())
+        or (left_char.isascii() and left_char.isalpha() and re.match(rf"[{cjk}]", right_char))
+    )
+    if compact_left or compact_right or cross_script:
+        return clean_text(first + second)
+    return clean_text(f"{first} {second}")
 
 
 def meaningful_text(value: str) -> bool:
@@ -911,7 +943,7 @@ def parse_docx_questions(lines: list[str]) -> tuple[list[dict], list[str]]:
 
     def append_text(field: str, value: str) -> None:
         if current is not None and value:
-            current[field] = clean_text(f"{current[field]} {value}")
+            current[field] = join_wrapped_text(current[field], value)
 
     def finish() -> None:
         nonlocal current
@@ -1102,6 +1134,17 @@ def parse_docx_questions(lines: list[str]) -> tuple[list[dict], list[str]]:
             if explanation_match:
                 append_text("explanation", explanation_match.group(1))
                 continue
+            # Legacy .doc conversion often emits a bare option label in one
+            # paragraph and its text in the following paragraph. Retain the
+            # empty slot here so wrapped text is attached to the right option
+            # instead of leaking into the stem or the preceding option.
+            empty_option_match = EMPTY_OPTION_RE.match(line)
+            if empty_option_match:
+                option_key = empty_option_match.group(1).upper()
+                current["options"].append([option_key, ""])
+                if correct_option and option_key not in current["answer"]:
+                    current["answer"].append(option_key)
+                continue
             option_match = OPTION_RE.match(line)
             if not option_match:
                 attached_match = ATTACHED_NUMERIC_OPTION_RE.match(line)
@@ -1132,7 +1175,7 @@ def parse_docx_questions(lines: list[str]) -> tuple[list[dict], list[str]]:
             elif current["options"]:
                 # Wrapped option text belongs to the last option, not to the
                 # next question prompt.
-                current["options"][-1][1] = clean_text(f"{current['options'][-1][1]} {line}")
+                current["options"][-1][1] = join_wrapped_text(current["options"][-1][1], line)
             else:
                 append_text("prompt", line)
 
