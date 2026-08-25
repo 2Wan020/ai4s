@@ -1993,33 +1993,80 @@ def parse_so_search_results(payload: bytes, limit: int | None = None) -> list[di
     return results
 
 
+def parse_bing_rss_results(payload: bytes, limit: int | None = None) -> list[dict]:
+    maximum = max(1, min(limit or MAX_RELATED_SEARCH_RESULTS, 10))
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError:
+        return []
+    results: list[dict] = []
+    seen_urls: set[str] = set()
+    for item in root.findall("./channel/item"):
+        title = clean_search_summary(item.findtext("title", ""), 180)
+        url = unescape(str(item.findtext("link", "") or "")).strip()
+        snippet = clean_search_summary(item.findtext("description", ""), 500)
+        parsed_url = urlsplit(url)
+        normalised_url = url.lower()
+        if (
+            not title
+            or not snippet
+            or parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.netloc
+            or normalised_url in seen_urls
+        ):
+            continue
+        seen_urls.add(normalised_url)
+        results.append({
+            "index": len(results) + 1,
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "provider": "Bing 搜索",
+        })
+        if len(results) >= maximum:
+            break
+    return results
+
+
 def search_web_for_related_questions(question: dict) -> list[dict]:
     query = related_search_query(question)
-    url = "https://www.so.com/s?" + urlencode({
-        "q": query,
-        "src": "srp",
-    })
-    request = Request(
-        url,
-        headers={
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TudouQuiz/2.5",
-        },
-    )
-    try:
-        with urlopen(request, timeout=15) as response:
-            payload = response.read(MAX_RELATED_SEARCH_BYTES + 1)
-    except HTTPError as error:
-        raise AIImportError(f"联网搜索请求失败（HTTP {error.code}）") from error
-    except (URLError, TimeoutError) as error:
-        raise AIImportError("无法连接联网搜索服务，请稍后重试") from error
-    if len(payload) > MAX_RELATED_SEARCH_BYTES:
-        raise AIImportError("联网搜索返回内容过大")
-    results = parse_so_search_results(payload)
-    if not results:
-        raise AIImportError("联网搜索暂未找到可用的相关资料")
-    return results
+    providers = [
+        (
+            "360搜索",
+            "https://www.so.com/s?" + urlencode({"q": query, "src": "srp"}),
+            "text/html,application/xhtml+xml",
+            parse_so_search_results,
+        ),
+        (
+            "Bing 搜索",
+            "https://cn.bing.com/search?" + urlencode({"format": "rss", "q": query}),
+            "application/rss+xml,application/xml,text/xml",
+            parse_bing_rss_results,
+        ),
+    ]
+    for provider, url, accept, parser in providers:
+        request = Request(
+            url,
+            headers={
+                "Accept": accept,
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TudouQuiz/2.6",
+            },
+        )
+        try:
+            with urlopen(request, timeout=15) as response:
+                payload = response.read(MAX_RELATED_SEARCH_BYTES + 1)
+        except (HTTPError, URLError, TimeoutError):
+            continue
+        if len(payload) > MAX_RELATED_SEARCH_BYTES:
+            continue
+        results = parser(payload)
+        if not results:
+            continue
+        for source in results:
+            source.setdefault("provider", provider)
+        return results
+    raise AIImportError("联网搜索暂不可用，请稍后重试")
 
 
 def validate_related_web_questions(result: dict, sources: list[dict], original_question: dict) -> list[dict]:
@@ -2708,7 +2755,7 @@ class QuizHandler(SimpleHTTPRequestHandler):
                     {"index": source["index"], "title": source["title"], "url": source["url"]}
                     for source in sources
                 ],
-                "searchProvider": "360搜索",
+                "searchProvider": str(sources[0].get("provider", "360搜索")),
                 "model": DEEPSEEK_MODEL,
             })
         except AIImportError as error:

@@ -213,6 +213,25 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
         self.assertEqual(results[1]["index"], 2)
         self.assertEqual(results[1]["url"], "http://example.org/two")
 
+    def test_bing_rss_search_results_are_sanitised_and_limited(self):
+        payload = b'''<?xml version="1.0" encoding="utf-8"?><rss version="2.0"><channel>
+        <item><title>Related &amp; useful</title><link>https://example.com/one</link><description>&lt;b&gt;Summary&lt;/b&gt; text</description></item>
+        <item><title>Duplicate</title><link>https://example.com/one</link><description>ignored</description></item>
+        <item><title>Unsafe</title><link>javascript:alert(1)</link><description>ignored</description></item>
+        <item><title>Second result</title><link>http://example.org/two</link><description>Another summary</description></item>
+        </channel></rss>'''
+        results = server.parse_bing_rss_results(payload, limit=2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], {
+            "index": 1,
+            "title": "Related & useful",
+            "url": "https://example.com/one",
+            "snippet": "Summary text",
+            "provider": "Bing 搜索",
+        })
+        self.assertEqual(results[1]["index"], 2)
+        self.assertEqual(results[1]["url"], "http://example.org/two")
+
     def test_related_endpoint_combines_web_search_and_structured_questions(self):
         opener, _ = self.browser()
         original_api_key = server.load_deepseek_api_key
