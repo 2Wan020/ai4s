@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f8f83" />
     <title>土豆题库 · 独立题库刷题站</title>
-    <link rel="stylesheet" href="styles.css?v=22" />
+    <link rel="stylesheet" href="styles.css?v=23" />
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -154,7 +154,12 @@ C. 选项三
             <label class="auto-next-option" for="auto-next-correct">
               <input type="checkbox" id="auto-next-correct" />
               <span class="auto-next-check" aria-hidden="true">✓</span>
-              <span class="auto-next-copy"><strong>答对后自动下一题</strong><small>答错时仍停留，方便查看答案与解析</small></span>
+              <span class="auto-next-copy"><strong>答对后自动下一题</strong></span>
+            </label>
+            <label class="auto-next-option" for="practice-shuffle-options">
+              <input type="checkbox" id="practice-shuffle-options" />
+              <span class="auto-next-check" aria-hidden="true">✓</span>
+              <span class="auto-next-copy"><strong>打乱选项顺序</strong><small>从下一题开始生效</small></span>
             </label>
           </div>
           <article class="quiz-card">
@@ -238,6 +243,6 @@ C. 选项三
 
     <footer class="shell footer"><span>土豆题库</span><span>专注每一道题。</span></footer>
     <script src="vendor/markdown-it.umd.min.js?v=15.0.0"></script>
-    <script src="app.js?v=27"></script>
+    <script src="app.js?v=28"></script>
   </body>
 </html>

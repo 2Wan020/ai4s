@@ -768,19 +768,27 @@ function updateMockTotal() {
 
 function prepareQuestion(question, shouldShuffleOptions) {
   const sourceOptions = question.options.map(([key, text]) => ({ key, text }));
-  if (!shouldShuffleOptions) return { ...question, displayOptions: question.options.map((option) => [...option]), displayAnswers: questionAnswers(question) };
+  if (!shouldShuffleOptions) {
+    return {
+      ...question,
+      displayOptions: question.options.map((option) => [...option]),
+      displayAnswers: questionAnswers(question),
+      optionOrderShuffled: false
+    };
+  }
   const shuffled = shuffle(sourceOptions);
   const answerMap = new Map(shuffled.map((option, index) => [option.key, LETTERS[index]]));
   return {
     ...question,
     displayOptions: shuffled.map((option, index) => [LETTERS[index], option.text]),
-    displayAnswers: questionAnswers(question).map((answer) => answerMap.get(answer) || answer).sort()
+    displayAnswers: questionAnswers(question).map((answer) => answerMap.get(answer) || answer).sort(),
+    optionOrderShuffled: true
   };
 }
 
 function buildSession(spec, routeKey = '') {
   const config = MODE_CONFIG[spec.mode];
-  const shouldShuffleOptions = typeof spec.shuffleOptions === 'boolean' ? spec.shuffleOptions : config.shuffleOptions;
+  const shouldShuffleOptions = typeof spec.shuffleOptions === 'boolean' ? spec.shuffleOptions : state.shufflePracticeOptions;
   let bank = spec.bankId === 'all' ? null : getBank(spec.bankId);
   const collectionMode = ['wrong', 'favorite'].includes(spec.mode);
   let source = bank ? [...(collectionMode ? bankAllQuestions(bank) : bank.questions)] : allQuestions();
@@ -801,10 +809,12 @@ function buildSession(spec, routeKey = '') {
     bankName: bank ? bank.name : '全部题库',
     mode: spec.mode,
     modeLabel: `${config.label}${optionOrderLabel}`,
+    shuffleOptionsForNext: shouldShuffleOptions,
     questions,
     current: 0,
     responses: questions.map(() => ({
       selected: [], submitted: false, correct: false, hasAnswer: false,
+      optionOrderLocked: false,
       aiExplanation: '', aiModel: '', aiLoading: false, aiSkipped: false, aiError: '',
       aiConversation: [], aiFollowupLoading: false, aiFollowupError: '',
       relatedLoading: false, relatedLoaded: false, relatedError: '',
@@ -844,6 +854,7 @@ function beginSession(spec, routeKey = '') {
     if (bookmarkedIndex >= 0) state.session.current = bookmarkedIndex;
     else if (Number.isInteger(bookmark.current)) state.session.current = Math.min(Math.max(0, bookmark.current), state.session.questions.length - 1);
   }
+  prepareQuestionForVisit(state.session, state.session.current);
   showView('view-practice');
   renderCurrentQuestion();
   savePracticeBookmark(state.session);
@@ -876,16 +887,26 @@ function renderQuestionFavorite(question) {
   };
 }
 
+function prepareQuestionForVisit(session, index) {
+  const response = session?.responses?.[index];
+  const question = session?.questions?.[index];
+  if (!response || !question || response.optionOrderLocked) return;
+  session.questions[index] = prepareQuestion(question, session.shuffleOptionsForNext);
+}
+
 function renderCurrentQuestion() {
   const session = state.session;
   const question = session.questions[session.current];
   const response = session.responses[session.current];
+  response.optionOrderLocked = true;
   showView('view-practice');
   $('practice-bank').textContent = session.bankName;
+  session.modeLabel = `${MODE_CONFIG[session.mode].label} · ${question.optionOrderShuffled ? '选项乱序' : '选项原序'}`;
   $('practice-mode').textContent = session.modeLabel;
   $('practice-count').textContent = `${session.current + 1} / ${session.questions.length}`;
   $('practice-progress').style.width = `${(session.current + 1) / session.questions.length * 100}%`;
   $('auto-next-correct').checked = state.autoNextCorrect;
+  $('practice-shuffle-options').checked = session.shuffleOptionsForNext;
   renderQuestionFavorite(question);
   $('question-number').textContent = String(session.current + 1).padStart(2, '0');
   $('question-type').textContent = question.type === 'multi' ? '多选题 · 可选择多项' : '单选题 · 请选择 1 项';
@@ -1491,7 +1512,9 @@ function nextQuestion() {
   const session = state.session;
   clearAutoNextTimer(session);
   if (session.current >= session.questions.length - 1) { renderResult(); return; }
-  session.current += 1;
+  const nextIndex = session.current + 1;
+  prepareQuestionForVisit(session, nextIndex);
+  session.current = nextIndex;
   $('tutor-input').value = '';
   renderCurrentQuestion();
   savePracticeBookmark(session);
@@ -1501,7 +1524,9 @@ function nextQuestion() {
 function previousQuestion() {
   clearAutoNextTimer();
   if (state.session.current > 0) {
-    state.session.current -= 1;
+    const previousIndex = state.session.current - 1;
+    prepareQuestionForVisit(state.session, previousIndex);
+    state.session.current = previousIndex;
     $('tutor-input').value = '';
     renderCurrentQuestion();
     savePracticeBookmark(state.session);
@@ -1670,7 +1695,9 @@ function jumpToQuestion(event) {
   }
   input.setCustomValidity('');
   clearAutoNextTimer(session);
-  session.current = targetNumber - 1;
+  const targetIndex = targetNumber - 1;
+  prepareQuestionForVisit(session, targetIndex);
+  session.current = targetIndex;
   $('tutor-input').value = '';
   renderCurrentQuestion();
   savePracticeBookmark(session);
@@ -1811,6 +1838,21 @@ $('auto-next-correct').addEventListener('change', (event) => {
   saveBooleanPreference(AUTO_NEXT_CORRECT_KEY, state.autoNextCorrect);
   markProfileChanged();
   if (!state.autoNextCorrect) clearAutoNextTimer();
+});
+$('practice-shuffle-options').addEventListener('change', (event) => {
+  const session = state.session;
+  if (!session) return;
+  const shouldShuffle = event.currentTarget.checked;
+  session.shuffleOptionsForNext = shouldShuffle;
+  session.spec = { ...session.spec, shuffleOptions: shouldShuffle };
+  state.lastSpec = { ...(state.lastSpec || session.spec), shuffleOptions: shouldShuffle };
+  setShuffleOptionsPreference(shouldShuffle);
+  if (/\/(?:fixed|shuffle)$/.test(session.routeKey)) {
+    const nextRoute = session.routeKey.replace(/\/(?:fixed|shuffle)$/, `/${shouldShuffle ? 'shuffle' : 'fixed'}`);
+    window.history.replaceState(null, '', nextRoute);
+    session.routeKey = nextRoute;
+  }
+  savePracticeBookmark(session);
 });
 $('question-ai-generate').addEventListener('click', generateCurrentQuestionExplanation);
 $('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);

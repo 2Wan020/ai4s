@@ -232,7 +232,7 @@ button:disabled { cursor:not-allowed; }
 .practice-counter { justify-self:end; color:var(--muted); font:13px 'DM Mono',monospace; }
 .practice-progress { height:6px; margin-top:20px; overflow:hidden; border-radius:6px; background:#d5ebe5; }
 .practice-progress span { display:block; height:100%; border-radius:6px; background:var(--teal); transition:width .25s; }
-.practice-preferences { display:flex; justify-content:flex-end; max-width:820px; margin:12px auto 0; }
+.practice-preferences { display:flex; justify-content:flex-end; gap:10px; max-width:820px; margin:12px auto 0; }
 .auto-next-option { position:relative; display:flex; align-items:center; gap:9px; padding:8px 11px; border:1px solid #c6e4dd; border-radius:11px; color:var(--ink); background:rgba(255,255,255,.74); cursor:pointer; user-select:none; }
 .auto-next-option:hover { border-color:#78c6b7; background:#fff; }
 .auto-next-option input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
@@ -448,7 +448,7 @@ button:disabled { cursor:not-allowed; }
   .practice-identity strong { overflow:hidden; margin:0; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
   .practice-counter { grid-column:auto; grid-row:auto; font-size:12px; }
   .practice-progress { flex:0 0 auto; height:4px; margin-top:7px; }
-  .practice-preferences { flex:0 0 auto; justify-content:flex-end; margin:5px 0 0; }
+  .practice-preferences { flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; gap:2px 6px; margin:5px 0 0; }
   .auto-next-option { width:auto; gap:6px; padding:4px 7px; border-color:transparent; background:transparent; }
   .auto-next-option:hover { border-color:transparent; background:rgba(255,255,255,.55); }
   .auto-next-check { width:18px; height:18px; border-radius:5px; font-size:11px; }
