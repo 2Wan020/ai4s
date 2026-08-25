@@ -1877,11 +1877,7 @@ def prepare_related_request(payload: dict) -> tuple[dict, str]:
     if not isinstance(raw_question, dict):
         raise ValueError("相关题请求缺少原题上下文")
     question = prepare_explanation_sources([raw_question])[0]
-    if sorted(question["answer"]) == sorted(question["userAnswer"]):
-        raise ValueError("仅答错题目后可以获取相关练习")
     explanation = clean_text(str(payload.get("explanation", "")))[:5000]
-    if not explanation:
-        raise ValueError("请先查看本题解析，再获取相关练习")
     return question, explanation
 
 

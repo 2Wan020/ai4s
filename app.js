@@ -844,7 +844,7 @@ function buildSession(spec, routeKey = '') {
     responses: questions.map(() => ({
       selected: [], submitted: false, correct: false, hasAnswer: false,
       optionOrderLocked: false,
-      aiExplanation: '', aiModel: '', aiLoading: false, aiSkipped: false, aiError: '',
+      aiExplanation: '', aiModel: '', aiLoading: false, aiError: '',
       aiConversation: [], aiFollowupLoading: false, aiFollowupError: '',
       relatedLoading: false, relatedLoaded: false, relatedError: '',
       relatedLocal: [], relatedWeb: [], relatedSources: [],
@@ -1177,7 +1177,7 @@ function relatedQuestionMarkup(item, response) {
 
 function renderRelatedPractice(question, response) {
   const section = $('related-practice');
-  const visible = Boolean(response.aiExplanation && !response.aiLoading && response.submitted && response.hasAnswer && !response.correct);
+  const visible = Boolean(response.submitted && response.hasAnswer);
   section.hidden = !visible;
   if (!visible) return;
   $('related-origin-question').textContent = question.prompt;
@@ -1210,14 +1210,15 @@ function renderQuestionAiPanel(question, response) {
   const status = $('question-ai-status');
   const content = $('question-ai-content');
   const generateButton = $('question-ai-generate');
-  const skipButton = $('question-ai-skip');
+  const relatedButton = $('question-related');
   const canExplain = response.submitted && response.hasAnswer;
-  panel.hidden = !canExplain || response.aiSkipped;
+  panel.hidden = !canExplain;
   if (panel.hidden) return;
 
   generateButton.disabled = response.aiLoading;
-  skipButton.disabled = response.aiLoading;
+  relatedButton.disabled = response.relatedLoading;
   generateButton.textContent = response.aiLoading ? '生成中…' : '查看解析';
+  relatedButton.textContent = response.relatedLoading ? '获取中…' : '相关题目';
   prompt.hidden = false;
   $('explanation-question-number').textContent = `第 ${state.session.current + 1} 题`;
   $('explanation-question').textContent = question.prompt;
@@ -1280,7 +1281,7 @@ function openCurrentRelatedQuestions() {
   if (!session) return;
   const question = session.questions[session.current];
   const response = session.responses[session.current];
-  if (!response?.submitted || response.correct || !response.aiExplanation) return;
+  if (!response?.submitted || !response.hasAnswer) return;
   showView('view-related');
   renderRelatedPractice(question, response);
   if (!response.relatedLoaded && !response.relatedLoading) generateRelatedQuestions();
@@ -1349,7 +1350,6 @@ async function generateCurrentQuestionExplanation() {
   if (!responseState.submitted || !responseState.hasAnswer || responseState.aiLoading || responseState.aiExplanation) return;
 
   responseState.aiLoading = true;
-  responseState.aiSkipped = false;
   responseState.aiError = '';
   responseState.aiExplanation = '';
   responseState.aiConversation = [];
@@ -1466,7 +1466,7 @@ async function generateRelatedQuestions() {
   const questionIndex = session.current;
   const question = session.questions[questionIndex];
   const response = session.responses[questionIndex];
-  if (!response?.submitted || response.correct || !response.aiExplanation || response.relatedLoading) return;
+  if (!response?.submitted || !response.hasAnswer || response.relatedLoading) return;
 
   response.relatedLocal = findLocalRelatedQuestions(question);
   response.relatedWeb = [];
@@ -1489,7 +1489,7 @@ async function generateRelatedQuestions() {
           answer: question.displayAnswers,
           userAnswer: response.selected
         },
-        explanation: response.aiExplanation
+        explanation: response.aiExplanation || ''
       })
     });
     if (!apiResponse.ok) throw new Error(await readApiError(apiResponse, '获取联网相关题失败'));
@@ -1542,15 +1542,6 @@ function handleRelatedResultsClick(event) {
     }
   }
   renderRelatedPractice(question, response);
-}
-
-function skipCurrentQuestionExplanation() {
-  const session = state.session;
-  if (!session) return;
-  const response = session.responses[session.current];
-  if (!response?.submitted || response.aiLoading) return;
-  response.aiSkipped = true;
-  renderCurrentQuestion();
 }
 
 function clearAutoNextTimer(session = state.session) {
@@ -1939,7 +1930,7 @@ $('practice-shuffle-options').addEventListener('change', (event) => {
   savePracticeBookmark(session);
 });
 $('question-ai-generate').addEventListener('click', openCurrentQuestionExplanation);
-$('question-ai-skip').addEventListener('click', skipCurrentQuestionExplanation);
+$('question-related').addEventListener('click', openCurrentRelatedQuestions);
 $('explanation-back').addEventListener('click', returnToCurrentPractice);
 $('explanation-retry').addEventListener('click', generateCurrentQuestionExplanation);
 $('tutor-form').addEventListener('submit', submitQuestionFollowup);

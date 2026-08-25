@@ -261,9 +261,8 @@ class AnonymousProfilePersistenceTests(unittest.TestCase):
                     "prompt": "原题？",
                     "options": [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}],
                     "answer": ["A"],
-                    "userAnswer": ["B"],
+                    "userAnswer": ["A"],
                 },
-                "explanation": "原题解析。",
             })
         finally:
             server.load_deepseek_api_key = original_api_key

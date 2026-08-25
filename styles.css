@@ -255,7 +255,7 @@ button:disabled { cursor:not-allowed; }
 .answer-feedback { margin-top:20px; padding:15px 17px; border-radius:11px; color:#39715d; background:#e7f6ed; font-size:14px; line-height:1.8; }
 .answer-feedback.incorrect { color:#96584d; background:#fff0eb; }
 .question-ai-panel { margin-top:14px; padding:16px 17px; border:1px solid #c5e5de; border-radius:13px; background:#f3fbf8; }
-.question-ai-prompt { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.question-ai-prompt { display:flex; align-items:center; justify-content:flex-end; gap:20px; }
 .question-ai-prompt span,.question-ai-prompt strong,.question-ai-prompt small { display:block; }
 .question-ai-prompt span { margin-bottom:5px; color:var(--teal); font:10px 'DM Mono',monospace; letter-spacing:.12em; text-transform:uppercase; }
 .question-ai-prompt strong { font-size:15px; }
@@ -466,7 +466,7 @@ button:disabled { cursor:not-allowed; }
   .question-jump-form input { width:62px; min-height:34px; }
   .question-jump-form button { min-height:34px; }
   .question-ai-prompt { display:block; }
-  .question-ai-actions { margin-top:14px; }
+  .question-ai-actions { margin-top:0; }
   .question-ai-actions button { flex:1; }
   .tutor-followup-head { display:block; }
   .tutor-followup-head small { display:block; margin-top:3px; }
